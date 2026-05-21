@@ -13,6 +13,7 @@ import DiagnosticCenterProfile from './pages/DiagnosticCenterProfile';
 import UserDashboard from './pages/UserDashboard';
 import UserProfile from './pages/UserProfile';
 import SearchDoctors from './pages/SearchDoctors';
+import SearchTests from './pages/SearchTests';
 import BookAppointment from './pages/BookAppointment';
 import Home from './pages/Home';
 import SuperAdminLogin from './pages/SuperAdminLogin';
@@ -188,6 +189,14 @@ function App() {
             element={
               <PrivateRoute requiredRole="patient">
                 <SearchDoctors />
+              </PrivateRoute>
+            } 
+          />
+          <Route 
+            path="/search-tests" 
+            element={
+              <PrivateRoute requiredRole="patient">
+                <Navigate to="/user/dashboard" state={{ tab: 'tests' }} replace />
               </PrivateRoute>
             } 
           />

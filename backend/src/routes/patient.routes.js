@@ -23,7 +23,11 @@ import {
   submitHomeServiceRequest,
   getMyHistory,
   getAvailableTestSerials,
-  bookTestSerial
+  bookTestSerial,
+  getAvailableHomeServiceSerials,
+  bookHomeServiceSerial,
+  getMyHomeServiceSerialBookings,
+  getMyTestSerialBookings
 } from '../controllers/patient.controller.js';
 import { authenticate, authorize } from '../middlewares/auth.middleware.js';
 
@@ -70,6 +74,7 @@ router.post('/test-serials/book', [
   body('serialNumber').isInt({ min: 1 }).withMessage('Valid serial number is required'),
   body('date').isISO8601().withMessage('Valid date is required (YYYY-MM-DD)')
 ], bookTestSerial);
+router.get('/test-serials/my-bookings', getMyTestSerialBookings);
 
 // Home Services
 router.get('/home-services', getAllHomeServices);
@@ -87,6 +92,23 @@ router.post('/home-services/request', [
   body('requestedDate').optional().isISO8601().withMessage('Valid requested date is required'),
   body('requestedTime').optional().matches(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Requested time must be in HH:mm format')
 ], submitHomeServiceRequest);
+
+// Home Service Serial booking (Hospital)
+router.get('/hospitals/:hospitalId/home-services/:serviceId/serials', getAvailableHomeServiceSerials);
+router.post('/home-service-serials/book', [
+  body('hospitalId').notEmpty().withMessage('Hospital ID is required'),
+  body('homeServiceId').notEmpty().withMessage('Home service ID is required'),
+  body('serialNumber').isInt({ min: 1 }).withMessage('Valid serial number is required'),
+  body('date').isISO8601().withMessage('Valid date is required (YYYY-MM-DD)'),
+  body('patientName').trim().notEmpty().withMessage('Patient name is required'),
+  body('patientAge').isInt({ min: 0 }).withMessage('Valid patient age is required'),
+  body('patientGender').isIn(['male', 'female', 'other']).withMessage('Valid gender is required'),
+  body('phoneNumber').trim().notEmpty().withMessage('Phone number is required'),
+  body('homeAddress.street').trim().notEmpty().withMessage('Street address is required'),
+  body('homeAddress.city').trim().notEmpty().withMessage('City is required'),
+  body('notes').optional().trim()
+], bookHomeServiceSerial);
+router.get('/home-service-serials/my-bookings', getMyHomeServiceSerialBookings);
 
 // User History
 router.get('/history', getMyHistory);

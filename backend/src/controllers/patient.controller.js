@@ -15,10 +15,14 @@ import HomeService from '../models/HomeService.model.js';
 import HomeServiceRequest from '../models/HomeServiceRequest.model.js';
 import TestSerialSettings from '../models/TestSerialSettings.model.js';
 import TestSerialBooking from '../models/TestSerialBooking.model.js';
+import HomeServiceSerialSettings from '../models/HomeServiceSerialSettings.model.js';
+import HomeServiceSerialBooking from '../models/HomeServiceSerialBooking.model.js';
+import { buildAvailableSerials, calculateSerialTimeSlot } from '../utils/homeServiceSerial.util.js';
 import { generateAvailableSlots, lockSlot } from '../utils/slotGenerator.util.js';
 import { createAndSendNotification } from '../services/notification.service.js';
 import { generatePrescriptionPDF } from '../utils/pdfGenerator.util.js';
 import moment from 'moment';
+import mongoose from 'mongoose';
 import { validationResult } from 'express-validator';
 
 // Get patient profile
@@ -846,7 +850,18 @@ export const getDiagnosticTests = async (req, res) => {
     res.json({
       success: true,
       data: {
-        tests,
+        tests: tests.map((test) => {
+          const obj = test.toObject();
+          const hRef = test.hospitalId;
+          const cRef = test.diagnosticCenterId;
+          return {
+            ...obj,
+            hospitalId: hRef?._id?.toString() || hRef?.toString() || obj.hospitalId,
+            diagnosticCenterId: cRef?._id?.toString() || cRef?.toString() || obj.diagnosticCenterId,
+            hospital: hRef?._id ? { id: hRef._id, name: hRef.name, address: hRef.address } : null,
+            diagnosticCenter: cRef?._id ? { id: cRef._id, name: cRef.name, address: cRef.address } : null
+          };
+        }),
         total,
         page: parseInt(page),
         limit: parseInt(limit)
@@ -1868,23 +1883,30 @@ export const getAllHomeServices = async (req, res) => {
     res.json({
       success: true,
       data: {
-        homeServices: homeServices.map(service => ({
-          ...service.toObject(),
-          hospital: service.hospitalId ? {
-            id: service.hospitalId._id,
-            name: service.hospitalId.name,
-            address: service.hospitalId.address,
-            logo: service.hospitalId.logo,
-            contactInfo: service.hospitalId.contactInfo
-          } : null,
-          diagnosticCenter: service.diagnosticCenterId ? {
-            id: service.diagnosticCenterId._id,
-            name: service.diagnosticCenterId.name,
-            address: service.diagnosticCenterId.address,
-            logo: service.diagnosticCenterId.logo,
-            contactInfo: service.diagnosticCenterId.contactInfo
-          } : null
-        })),
+        homeServices: homeServices.map(service => {
+          const obj = service.toObject();
+          const hospitalRef = service.hospitalId;
+          const centerRef = service.diagnosticCenterId;
+          return {
+            ...obj,
+            hospitalId: hospitalRef?._id?.toString() || hospitalRef?.toString() || obj.hospitalId,
+            diagnosticCenterId: centerRef?._id?.toString() || centerRef?.toString() || obj.diagnosticCenterId,
+            hospital: hospitalRef ? {
+              id: hospitalRef._id,
+              name: hospitalRef.name,
+              address: hospitalRef.address,
+              logo: hospitalRef.logo,
+              contactInfo: hospitalRef.contactInfo
+            } : null,
+            diagnosticCenter: centerRef ? {
+              id: centerRef._id,
+              name: centerRef.name,
+              address: centerRef.address,
+              logo: centerRef.logo,
+              contactInfo: centerRef.contactInfo
+            } : null
+          };
+        }),
         total,
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1922,18 +1944,21 @@ export const getHomeServiceDetails = async (req, res) => {
       });
     }
 
+    const hospitalRefId = homeService.hospitalId?._id || homeService.hospitalId;
+    const centerRefId = homeService.diagnosticCenterId?._id || homeService.diagnosticCenterId;
+
     // Verify hospital or diagnostic center is approved
-    if (homeService.hospitalId) {
-      const hospital = await Hospital.findById(homeService.hospitalId);
+    if (hospitalRefId) {
+      const hospital = await Hospital.findById(hospitalRefId);
       if (hospital && hospital.status !== 'approved') {
         return res.status(404).json({
           success: false,
           message: 'Home service not available'
         });
       }
-    } else if (homeService.diagnosticCenterId) {
+    } else if (centerRefId) {
       const DiagnosticCenter = (await import('../models/DiagnosticCenter.model.js')).default;
-      const diagnosticCenter = await DiagnosticCenter.findById(homeService.diagnosticCenterId);
+      const diagnosticCenter = await DiagnosticCenter.findById(centerRefId);
       if (diagnosticCenter && diagnosticCenter.status !== 'approved') {
         return res.status(404).json({
           success: false,
@@ -1942,26 +1967,32 @@ export const getHomeServiceDetails = async (req, res) => {
       }
     }
 
+    const hospitalPop = homeService.hospitalId?._id ? homeService.hospitalId : null;
+    const centerPop = homeService.diagnosticCenterId?._id ? homeService.diagnosticCenterId : null;
+    const obj = homeService.toObject();
+
     res.json({
       success: true,
       data: {
         homeService: {
-          ...homeService.toObject(),
-          hospital: homeService.hospitalId ? {
-            id: homeService.hospitalId._id,
-            name: homeService.hospitalId.name,
-            address: homeService.hospitalId.address,
-            logo: homeService.hospitalId.logo,
-            contactInfo: homeService.hospitalId.contactInfo,
-            departments: homeService.hospitalId.departments
+          ...obj,
+          hospitalId: hospitalRefId?.toString() || obj.hospitalId,
+          diagnosticCenterId: centerRefId?.toString() || obj.diagnosticCenterId,
+          hospital: hospitalPop ? {
+            id: hospitalPop._id,
+            name: hospitalPop.name,
+            address: hospitalPop.address,
+            logo: hospitalPop.logo,
+            contactInfo: hospitalPop.contactInfo,
+            departments: hospitalPop.departments
           } : null,
-          diagnosticCenter: homeService.diagnosticCenterId ? {
-            id: homeService.diagnosticCenterId._id,
-            name: homeService.diagnosticCenterId.name,
-            address: homeService.diagnosticCenterId.address,
-            logo: homeService.diagnosticCenterId.logo,
-            contactInfo: homeService.diagnosticCenterId.contactInfo,
-            departments: homeService.diagnosticCenterId.departments
+          diagnosticCenter: centerPop ? {
+            id: centerPop._id,
+            name: centerPop.name,
+            address: centerPop.address,
+            logo: centerPop.logo,
+            contactInfo: centerPop.contactInfo,
+            departments: centerPop.departments
           } : null
         }
       }
@@ -2008,6 +2039,16 @@ export const submitHomeServiceRequest = async (req, res) => {
         success: false,
         message: 'Either hospitalId or diagnosticCenterId is required'
       });
+    }
+
+    if (hospitalId && !mongoose.Types.ObjectId.isValid(hospitalId)) {
+      return res.status(400).json({ success: false, message: 'Invalid hospital ID' });
+    }
+    if (diagnosticCenterId && !mongoose.Types.ObjectId.isValid(diagnosticCenterId)) {
+      return res.status(400).json({ success: false, message: 'Invalid diagnostic center ID' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(homeServiceId)) {
+      return res.status(400).json({ success: false, message: 'Invalid home service ID' });
     }
 
     if (hospitalId && diagnosticCenterId) {
@@ -2224,6 +2265,98 @@ export const getMyHistory = async (req, res) => {
       });
     }
 
+    // Get home service serial bookings if type is 'home_service_serials' or 'all'
+    if (!type || type === 'home_service_serials' || type === 'all') {
+      const serialBookings = await HomeServiceSerialBooking.find({ patientId })
+        .populate('hospitalId', 'name address logo contactInfo')
+        .populate('homeServiceId', 'serviceType price note')
+        .sort({ appointmentDate: -1, createdAt: -1 })
+        .skip(type === 'home_service_serials' ? skip : 0)
+        .limit(type === 'home_service_serials' ? parseInt(limit) : 1000);
+
+      serialBookings.forEach((booking) => {
+        history.push({
+          type: 'home_service_serial',
+          id: booking._id,
+          bookingNumber: booking.bookingNumber,
+          serialNumber: booking.serialNumber,
+          hospital: booking.hospitalId ? {
+            id: booking.hospitalId._id,
+            name: booking.hospitalId.name,
+            address: booking.hospitalId.address,
+            logo: booking.hospitalId.logo
+          } : null,
+          service: booking.homeServiceId ? {
+            id: booking.homeServiceId._id,
+            serviceType: booking.homeServiceId.serviceType,
+            price: booking.servicePrice
+          } : null,
+          patientName: booking.patientName,
+          patientAge: booking.patientAge,
+          patientGender: booking.patientGender,
+          homeAddress: booking.homeAddress,
+          phoneNumber: booking.patientPhone,
+          date: booking.appointmentDate,
+          time: booking.timeSlot?.startTime,
+          endTime: booking.timeSlot?.endTime,
+          status: booking.status,
+          notes: booking.notes,
+          createdAt: booking.createdAt,
+          updatedAt: booking.updatedAt,
+          completedAt: booking.completedAt
+        });
+      });
+    }
+
+    // Get test serial bookings if type is 'test_serials' or 'all'
+    if (!type || type === 'test_serials' || type === 'all') {
+      const testSerialBookings = await TestSerialBooking.find({ patientId })
+        .populate('hospitalId', 'name address logo')
+        .populate('diagnosticCenterId', 'name address logo')
+        .populate('testId', 'name code category')
+        .sort({ appointmentDate: -1, createdAt: -1 })
+        .skip(type === 'test_serials' ? skip : 0)
+        .limit(type === 'test_serials' ? parseInt(limit) : 1000);
+
+      testSerialBookings.forEach((booking) => {
+        history.push({
+          type: 'test_serial',
+          id: booking._id,
+          bookingNumber: booking.bookingNumber,
+          serialNumber: booking.serialNumber,
+          hospital: booking.hospitalId ? {
+            id: booking.hospitalId._id,
+            name: booking.hospitalId.name,
+            address: booking.hospitalId.address,
+            logo: booking.hospitalId.logo
+          } : null,
+          diagnosticCenter: booking.diagnosticCenterId ? {
+            id: booking.diagnosticCenterId._id,
+            name: booking.diagnosticCenterId.name,
+            address: booking.diagnosticCenterId.address,
+            logo: booking.diagnosticCenterId.logo
+          } : null,
+          test: booking.testId ? {
+            id: booking.testId._id,
+            name: booking.testName || booking.testId.name,
+            code: booking.testId.code,
+            category: booking.testId.category
+          } : { name: booking.testName },
+          testPrice: booking.testPrice,
+          patientName: booking.patientName,
+          patientPhone: booking.patientPhone,
+          date: booking.appointmentDate,
+          time: booking.timeSlot?.startTime,
+          endTime: booking.timeSlot?.endTime,
+          status: booking.status,
+          notes: booking.notes,
+          createdAt: booking.createdAt,
+          updatedAt: booking.updatedAt,
+          completedAt: booking.completedAt
+        });
+      });
+    }
+
     // Get home service requests if type is 'home_services' or 'all'
     if (!type || type === 'home_services' || type === 'all') {
       const DiagnosticCenter = (await import('../models/DiagnosticCenter.model.js')).default;
@@ -2293,6 +2426,10 @@ export const getMyHistory = async (req, res) => {
       total = await Appointment.countDocuments({ patientId });
     } else if (type === 'home_services') {
       total = await HomeServiceRequest.countDocuments({ patientId });
+    } else if (type === 'home_service_serials') {
+      total = await HomeServiceSerialBooking.countDocuments({ patientId });
+    } else if (type === 'test_serials') {
+      total = await TestSerialBooking.countDocuments({ patientId });
     }
 
     res.json({
@@ -2325,6 +2462,14 @@ export const getAvailableTestSerials = async (req, res) => {
   try {
     const { testId, hospitalId, diagnosticCenterId } = req.params;
     const { date } = req.query;
+
+    const providerId = hospitalId || diagnosticCenterId;
+    if (!mongoose.Types.ObjectId.isValid(testId) || !mongoose.Types.ObjectId.isValid(providerId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid test or provider ID'
+      });
+    }
 
     if (!date) {
       return res.status(400).json({
@@ -2556,6 +2701,16 @@ export const bookTestSerial = async (req, res) => {
 
     const { testId, hospitalId, diagnosticCenterId, serialNumber, date } = req.body;
 
+    if (!mongoose.Types.ObjectId.isValid(testId)) {
+      return res.status(400).json({ success: false, message: 'Invalid test ID' });
+    }
+    if (hospitalId && !mongoose.Types.ObjectId.isValid(hospitalId)) {
+      return res.status(400).json({ success: false, message: 'Invalid hospital ID' });
+    }
+    if (diagnosticCenterId && !mongoose.Types.ObjectId.isValid(diagnosticCenterId)) {
+      return res.status(400).json({ success: false, message: 'Invalid diagnostic center ID' });
+    }
+
     if (!serialNumber || serialNumber % 2 !== 0) {
       return res.status(400).json({
         success: false,
@@ -2705,6 +2860,19 @@ export const bookTestSerial = async (req, res) => {
 
     // Get patient info
     const patient = await User.findById(req.user._id);
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: 'Patient profile not found'
+      });
+    }
+
+    if (!test) {
+      return res.status(404).json({
+        success: false,
+        message: 'Test not found'
+      });
+    }
 
     // Generate booking number
     const bookingNumber = `TSB-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
@@ -2805,10 +2973,14 @@ export const bookTestSerial = async (req, res) => {
             code: test.code,
             category: test.category
           },
-          diagnosticCenter: {
+          hospital: hospital ? {
+            id: hospital._id,
+            name: hospital.name
+          } : null,
+          diagnosticCenter: diagnosticCenter ? {
             id: diagnosticCenter._id,
             name: diagnosticCenter.name
-          }
+          } : null
         }
       }
     });
@@ -2817,6 +2989,402 @@ export const bookTestSerial = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to book test serial',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET /api/patient/hospitals/:hospitalId/home-services/:serviceId/serials
+ */
+export const getAvailableHomeServiceSerials = async (req, res) => {
+  try {
+    const { hospitalId, serviceId } = req.params;
+    const { date } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(hospitalId) || !mongoose.Types.ObjectId.isValid(serviceId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid hospital or service ID'
+      });
+    }
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date is required (format: YYYY-MM-DD)'
+      });
+    }
+
+    const hospital = await Hospital.findById(hospitalId);
+    if (!hospital || hospital.status !== 'approved') {
+      return res.status(404).json({
+        success: false,
+        message: 'Hospital not found or not approved'
+      });
+    }
+
+    const homeService = await HomeService.findById(serviceId);
+    if (!homeService || !homeService.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'Home service not found or not available'
+      });
+    }
+
+    if (homeService.hospitalId?.toString() !== hospitalId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Home service does not belong to this hospital'
+      });
+    }
+
+    const serialSettings = await HomeServiceSerialSettings.findOne({
+      homeServiceId: serviceId,
+      hospitalId,
+      isActive: true
+    });
+
+    if (!serialSettings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Serial booking is not enabled for this home service'
+      });
+    }
+
+    const dayOfWeek = moment(date).day();
+    if (serialSettings.availableDays?.length > 0 && !serialSettings.availableDays.includes(dayOfWeek)) {
+      return res.json({
+        success: true,
+        data: {
+          homeService: {
+            id: homeService._id,
+            serviceType: homeService.serviceType
+          },
+          hospital: { id: hospital._id, name: hospital.name },
+          date,
+          availableSerials: [],
+          totalSerials: serialSettings.totalSerialsPerDay,
+          message: 'No serials available on this day'
+        }
+      });
+    }
+
+    const bookedBookings = await HomeServiceSerialBooking.find({
+      homeServiceId: serviceId,
+      hospitalId,
+      appointmentDate: {
+        $gte: moment(date).startOf('day').toDate(),
+        $lte: moment(date).endOf('day').toDate()
+      },
+      status: { $in: ['pending', 'confirmed'] }
+    }).select('serialNumber');
+
+    const bookedSerialNumbers = bookedBookings.map((b) => b.serialNumber);
+    const { availableSerials } = buildAvailableSerials(serialSettings, bookedSerialNumbers);
+
+    res.json({
+      success: true,
+      data: {
+        homeService: {
+          id: homeService._id,
+          serviceType: homeService.serviceType,
+          note: homeService.note
+        },
+        hospital: { id: hospital._id, name: hospital.name },
+        date,
+        availableSerials,
+        totalSerials: serialSettings.totalSerialsPerDay,
+        servicePrice: serialSettings.servicePrice,
+        timeRange: serialSettings.serialTimeRange,
+        bookedCount: bookedBookings.length,
+        availableCount: availableSerials.length
+      }
+    });
+  } catch (error) {
+    console.error('Get available home service serials error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get available home service serials',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/patient/home-service-serials/book
+ */
+export const bookHomeServiceSerial = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const {
+      hospitalId,
+      homeServiceId,
+      serialNumber,
+      date,
+      patientName,
+      patientAge,
+      patientGender,
+      phoneNumber,
+      homeAddress,
+      notes
+    } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(hospitalId) || !mongoose.Types.ObjectId.isValid(homeServiceId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid hospital or home service ID'
+      });
+    }
+
+    if (!serialNumber || serialNumber % 2 !== 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only even-numbered serials can be booked online'
+      });
+    }
+
+    const appointmentDate = moment(date).startOf('day').toDate();
+    const dayOfWeek = moment(date).day();
+
+    const hospital = await Hospital.findById(hospitalId).populate('admins', 'email name phone');
+    if (!hospital || hospital.status !== 'approved') {
+      return res.status(404).json({
+        success: false,
+        message: 'Hospital not found or not approved'
+      });
+    }
+
+    const homeService = await HomeService.findById(homeServiceId);
+    if (!homeService || !homeService.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'Home service not found or not available'
+      });
+    }
+
+    if (homeService.hospitalId?.toString() !== hospitalId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Home service does not belong to this hospital'
+      });
+    }
+
+    const serialSettings = await HomeServiceSerialSettings.findOne({
+      homeServiceId,
+      hospitalId,
+      isActive: true
+    });
+
+    if (!serialSettings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Serial booking is not enabled for this home service'
+      });
+    }
+
+    if (serialSettings.availableDays?.length > 0 && !serialSettings.availableDays.includes(dayOfWeek)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Serials are not available on this day'
+      });
+    }
+
+    const existingBooking = await HomeServiceSerialBooking.findOne({
+      homeServiceId,
+      hospitalId,
+      appointmentDate: {
+        $gte: moment(date).startOf('day').toDate(),
+        $lte: moment(date).endOf('day').toDate()
+      },
+      serialNumber,
+      status: { $in: ['pending', 'confirmed'] }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({
+        success: false,
+        message: 'This serial is already booked'
+      });
+    }
+
+    const timeSlot = calculateSerialTimeSlot(serialSettings, serialNumber);
+    const patient = await User.findById(req.user._id);
+    const bookingNumber = `HSB-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    const booking = await HomeServiceSerialBooking.create({
+      patientId: req.user._id,
+      hospitalId,
+      homeServiceId,
+      bookingNumber,
+      serialNumber,
+      appointmentDate,
+      timeSlot,
+      servicePrice: serialSettings.servicePrice,
+      serviceType: homeService.serviceType,
+      patientName,
+      patientAge,
+      patientGender,
+      patientEmail: patient.email,
+      patientPhone: phoneNumber || patient.phone,
+      homeAddress,
+      notes,
+      status: 'pending'
+    });
+
+    const io = req.app.get('io');
+
+    if (hospital.admins?.length > 0) {
+      for (const admin of hospital.admins) {
+        if (admin._id) {
+          try {
+            await createAndSendNotification(
+              io,
+              admin._id,
+              'home_service_serial_booking',
+              'New Home Service Serial Booking',
+              `New booking for ${homeService.serviceType}: ${patientName} - Serial #${serialNumber} on ${date}`,
+              booking._id,
+              'home_service_booking'
+            );
+          } catch (notifError) {
+            console.error('Failed to send notification to hospital admin:', notifError);
+          }
+        }
+      }
+    }
+
+    try {
+      await createAndSendNotification(
+        io,
+        req.user._id,
+        'home_service_serial_booking',
+        'Home Service Serial Booked',
+        `Your home service serial for ${homeService.serviceType} is confirmed. Serial #${serialNumber}, Date: ${date}, Time: ${timeSlot.startTime}`,
+        booking._id,
+        'home_service_booking'
+      );
+    } catch (notifError) {
+      console.error('Failed to send notification to patient:', notifError);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Home service serial booked successfully',
+      data: {
+        booking: {
+          ...booking.toObject(),
+          homeService: {
+            id: homeService._id,
+            serviceType: homeService.serviceType
+          },
+          hospital: {
+            id: hospital._id,
+            name: hospital.name
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Book home service serial error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to book home service serial',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET /api/patient/home-service-serials/my-bookings
+ */
+/**
+ * GET /api/patient/test-serials/my-bookings
+ */
+export const getMyTestSerialBookings = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const query = { patientId: req.user._id };
+    if (status) query.status = status;
+
+    const bookings = await TestSerialBooking.find(query)
+      .populate('hospitalId', 'name address logo')
+      .populate('diagnosticCenterId', 'name address logo')
+      .populate('testId', 'name code category')
+      .sort({ appointmentDate: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await TestSerialBooking.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        bookings,
+        total,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get my test serial bookings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch test serial bookings',
+      error: error.message
+    });
+  }
+};
+
+export const getMyHomeServiceSerialBookings = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const query = { patientId: req.user._id };
+    if (status) query.status = status;
+
+    const bookings = await HomeServiceSerialBooking.find(query)
+      .populate('hospitalId', 'name address logo contactInfo')
+      .populate('homeServiceId', 'serviceType price note')
+      .sort({ appointmentDate: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await HomeServiceSerialBooking.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        bookings,
+        total,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get my home service serial bookings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch home service serial bookings',
       error: error.message
     });
   }

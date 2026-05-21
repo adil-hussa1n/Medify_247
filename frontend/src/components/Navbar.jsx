@@ -106,10 +106,14 @@ const Navbar = () => {
     // Could navigate to a specific appointments tab if needed
   };
 
+  const handleTestsClick = () => {
+    setShowDropdown(false);
+    navigate('/user/dashboard', { state: { tab: 'tests' } });
+  };
+
   const handleTestOrdersClick = () => {
     setShowDropdown(false);
-    navigate('/user/dashboard');
-    // Could navigate to a specific test orders tab if needed
+    navigate('/user/dashboard', { state: { tab: 'test-orders' } });
   };
 
   const handleHomeServicesClick = () => {
@@ -380,15 +384,26 @@ const Navbar = () => {
                         <span className="option-subtitle">Manage bookings</span>
                       </div>
                     </button>
-                    <button onClick={handleTestOrdersClick} className="patient-dropdown-option">
+                    <button onClick={handleTestsClick} className="patient-dropdown-option">
                       <div className="option-icon tests">
                         <svg viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zM7 8a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
                         </svg>
                       </div>
                       <div className="option-content">
+                        <span className="option-title">Tests</span>
+                        <span className="option-subtitle">Search & book serials</span>
+                      </div>
+                    </button>
+                    <button onClick={handleTestOrdersClick} className="patient-dropdown-option">
+                      <div className="option-icon tests">
+                        <svg viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="option-content">
                         <span className="option-title">Test Orders</span>
-                        <span className="option-subtitle">Diagnostic tests</span>
+                        <span className="option-subtitle">Your bookings & orders</span>
                       </div>
                     </button>
                     <button onClick={handleHomeServicesClick} className="patient-dropdown-option">

@@ -2,6 +2,13 @@ import User from '../models/User.model.js';
 import Doctor from '../models/Doctor.model.js';
 import Hospital from '../models/Hospital.model.js';
 import DiagnosticCenter from '../models/DiagnosticCenter.model.js';
+import HospitalStaff from '../models/HospitalStaff.model.js';
+import {
+  ensureHospitalStaffMembership,
+  findHospitalForUser,
+  resolveEffectivePermissions
+} from '../utils/hospitalStaff.util.js';
+import { HOSPITAL_ROLE_LABELS } from '../constants/hospitalPermissions.js';
 
 /**
  * GET /api/users/:id
@@ -29,13 +36,26 @@ export const getUserProfile = async (req, res) => {
     }
 
     let roleData = null;
+    let hospitalAccess = null;
 
     // Get role-specific data
     if (user.role === 'doctor') {
       roleData = await Doctor.findOne({ userId: user._id })
         .populate('hospitalId', 'name status');
     } else if (user.role === 'hospital_admin') {
-      roleData = await Hospital.findOne({ userId: user._id });
+      roleData = await findHospitalForUser(user._id);
+      if (roleData) {
+        const membership = await ensureHospitalStaffMembership(roleData, user._id);
+        if (membership) {
+          hospitalAccess = {
+            hospitalId: roleData._id,
+            role: membership.role,
+            roleLabel: HOSPITAL_ROLE_LABELS[membership.role],
+            permissions: resolveEffectivePermissions(membership),
+            isOwner: membership.role === 'owner'
+          };
+        }
+      }
     } else if (user.role === 'diagnostic_center_admin') {
       roleData = await DiagnosticCenter.findOne({ userId: user._id });
     }
@@ -44,7 +64,8 @@ export const getUserProfile = async (req, res) => {
       success: true,
       data: {
         user,
-        roleData
+        roleData,
+        hospitalAccess
       }
     });
   } catch (error) {

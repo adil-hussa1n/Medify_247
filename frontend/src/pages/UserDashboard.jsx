@@ -1,17 +1,29 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import Navbar from '../components/Navbar';
 import './UserDashboard.css';
 
+/** Extract MongoDB id string from populated ref or plain id */
+const resolveEntityId = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (value._id) return String(value._id);
+  if (value.id) return String(value.id);
+  return null;
+};
+
 const UserDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('overview');
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(location.state?.tab || 'overview');
   const [dashboardData, setDashboardData] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [testOrders, setTestOrders] = useState([]);
+  const [testSerialBookings, setTestSerialBookings] = useState([]);
+  const [testOrdersLoading, setTestOrdersLoading] = useState(false);
   const [homeServices, setHomeServices] = useState([]);
   const [homeServiceRequests, setHomeServiceRequests] = useState([]);
   const [history, setHistory] = useState([]);
@@ -22,7 +34,13 @@ const UserDashboard = () => {
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [loadingDoctor, setLoadingDoctor] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
+  const [showSerialModal, setShowSerialModal] = useState(false);
+  const [homeServiceSerialBookings, setHomeServiceSerialBookings] = useState([]);
   const [selectedService, setSelectedService] = useState(null);
+  const [availableTests, setAvailableTests] = useState([]);
+  const [testsLoading, setTestsLoading] = useState(false);
+  const [selectedTest, setSelectedTest] = useState(null);
+  const [showTestBookModal, setShowTestBookModal] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'patient') {
@@ -30,14 +48,24 @@ const UserDashboard = () => {
       return;
     }
     fetchDashboardData();
+    fetchTestOrders();
   }, [user]);
 
   useEffect(() => {
+    if (location.state?.tab) {
+      setActiveTab(location.state.tab);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state?.tab]);
+
+  useEffect(() => {
     if (activeTab === 'appointments') fetchAppointments();
+    if (activeTab === 'tests') fetchAvailableTests();
     if (activeTab === 'test-orders') fetchTestOrders();
     if (activeTab === 'home-services') {
       fetchHomeServices();
       fetchHomeServiceRequests();
+      fetchHomeServiceSerialBookings();
     }
     if (activeTab === 'history') fetchHistory();
   }, [activeTab]);
@@ -69,14 +97,50 @@ const UserDashboard = () => {
     }
   };
 
-  const fetchTestOrders = async () => {
+  const fetchAvailableTests = async (filters = {}) => {
+    setTestsLoading(true);
     try {
-      const response = await api.get('/patient/diagnostics/orders');
+      const params = new URLSearchParams({ limit: '50' });
+      if (filters.search) params.append('search', filters.search);
+      if (filters.category) params.append('category', filters.category);
+      const response = await api.get(`/patient/diagnostics/tests?${params.toString()}`);
       if (response.data.success) {
-        setTestOrders(response.data.data.orders || []);
+        let list = response.data.data.tests || [];
+        if (filters.providerType === 'hospital') {
+          list = list.filter((t) => t.hospitalId || t.hospital);
+        } else if (filters.providerType === 'diagnostic') {
+          list = list.filter((t) => t.diagnosticCenterId || t.diagnosticCenter);
+        }
+        setAvailableTests(list);
+      }
+    } catch (err) {
+      console.error('Error fetching tests:', err);
+      setError(err.response?.data?.message || 'Failed to load tests');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setTestsLoading(false);
+    }
+  };
+
+  const fetchTestOrders = async () => {
+    setTestOrdersLoading(true);
+    try {
+      const [ordersRes, serialsRes] = await Promise.all([
+        api.get('/patient/diagnostics/orders'),
+        api.get('/patient/test-serials/my-bookings')
+      ]);
+      if (ordersRes.data.success) {
+        setTestOrders(ordersRes.data.data.orders || []);
+      }
+      if (serialsRes.data.success) {
+        setTestSerialBookings(serialsRes.data.data.bookings || []);
       }
     } catch (err) {
       console.error('Error fetching test orders:', err);
+      setError(err.response?.data?.message || 'Failed to load test orders');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setTestOrdersLoading(false);
     }
   };
 
@@ -111,6 +175,17 @@ const UserDashboard = () => {
     }
   };
 
+  const fetchHomeServiceSerialBookings = async () => {
+    try {
+      const response = await api.get('/patient/home-service-serials/my-bookings');
+      if (response.data.success) {
+        setHomeServiceSerialBookings(response.data.data.bookings || []);
+      }
+    } catch (err) {
+      console.error('Error fetching home service serial bookings:', err);
+    }
+  };
+
   const handleRequestService = (service) => {
     setSelectedService(service);
     setShowRequestModal(true);
@@ -119,6 +194,56 @@ const UserDashboard = () => {
   const handleCloseRequestModal = () => {
     setShowRequestModal(false);
     setSelectedService(null);
+  };
+
+  const handleBookSerial = (service) => {
+    setSelectedService(service);
+    setShowSerialModal(true);
+  };
+
+  const handleCloseSerialModal = () => {
+    setShowSerialModal(false);
+    setSelectedService(null);
+  };
+
+  const handleBookTestSerial = (test) => {
+    setSelectedTest(test);
+    setShowTestBookModal(true);
+  };
+
+  const handleCloseTestBookModal = () => {
+    setShowTestBookModal(false);
+    setSelectedTest(null);
+  };
+
+  const handleSubmitTestSerialBooking = async () => {
+    setSuccess('Test serial booked successfully!');
+    setTimeout(() => setSuccess(''), 5000);
+    setShowTestBookModal(false);
+    setSelectedTest(null);
+    fetchTestOrders();
+    fetchAvailableTests();
+    fetchHistory();
+  };
+
+  const handleSubmitSerialBooking = async (bookingData) => {
+    try {
+      const response = await api.post('/patient/home-service-serials/book', bookingData);
+      if (response.data.success) {
+        setSuccess('Home service serial booked successfully!');
+        setTimeout(() => setSuccess(''), 5000);
+        setShowSerialModal(false);
+        setSelectedService(null);
+        fetchHomeServiceSerialBookings();
+        fetchHistory();
+      } else {
+        setError(response.data.message || 'Failed to book serial');
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to book serial');
+      setTimeout(() => setError(''), 3000);
+    }
   };
 
   const handleSubmitRequest = async (requestData) => {
@@ -234,7 +359,7 @@ const UserDashboard = () => {
     upcomingAppointments: appointments.filter(apt => 
       new Date(apt.appointmentDate) >= new Date() && apt.status !== 'cancelled'
     ).length,
-    testOrders: testOrders.length,
+    testOrders: testOrders.length + testSerialBookings.length,
     homeServiceRequests: history.filter(h => h.type === 'home_service').length
   };
 
@@ -282,6 +407,15 @@ const UserDashboard = () => {
               <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
             </svg>
             Appointments
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'tests' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tests')}
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zM7 8a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+            </svg>
+            Tests
           </button>
           <button
             className={`tab-button ${activeTab === 'test-orders' ? 'active' : ''}`}
@@ -337,18 +471,32 @@ const UserDashboard = () => {
               }}
             />
           )}
+          {activeTab === 'tests' && (
+            <TestsBrowseTab
+              tests={availableTests}
+              loading={testsLoading}
+              onSearch={fetchAvailableTests}
+              onBookSerial={handleBookTestSerial}
+              onViewOrders={() => setActiveTab('test-orders')}
+            />
+          )}
           {activeTab === 'test-orders' && (
             <TestOrdersTab 
               orders={testOrders}
+              serialBookings={testSerialBookings}
+              loading={testOrdersLoading}
               onRefresh={fetchTestOrders}
+              navigate={navigate}
             />
           )}
           {activeTab === 'home-services' && (
             <HomeServicesTab 
               services={homeServices}
               requests={homeServiceRequests}
+              serialBookings={homeServiceSerialBookings}
               onRefresh={fetchHomeServices}
               onRequestService={handleRequestService}
+              onBookSerial={handleBookSerial}
               onRefreshRequests={fetchHomeServiceRequests}
             />
           )}
@@ -380,6 +528,24 @@ const UserDashboard = () => {
           user={user}
           onSubmit={handleSubmitRequest}
           onClose={handleCloseRequestModal}
+        />
+      )}
+
+      {showSerialModal && selectedService && (
+        <HomeServiceSerialBookingModal
+          service={selectedService}
+          user={user}
+          onSubmit={handleSubmitSerialBooking}
+          onClose={handleCloseSerialModal}
+        />
+      )}
+
+      {showTestBookModal && selectedTest && (
+        <TestSerialBookingModal
+          test={selectedTest}
+          onSuccess={handleSubmitTestSerialBooking}
+          onClose={handleCloseTestBookModal}
+          setError={setError}
         />
       )}
     </div>
@@ -451,12 +617,12 @@ const OverviewTab = ({ metrics, navigate }) => {
             <p>Find and book appointments with doctors</p>
           </button>
 
-          <button className="action-card" onClick={() => navigate('/search-tests')}>
+          <button className="action-card" onClick={() => navigate('/user/dashboard', { state: { tab: 'tests' } })}>
             <svg viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zM7 8a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
             </svg>
             <h3>Book Tests</h3>
-            <p>Order diagnostic tests</p>
+            <p>Search tests and book a serial</p>
           </button>
 
           <button className="action-card" onClick={() => navigate('/home-services')}>
@@ -647,8 +813,173 @@ const AppointmentsTab = ({ appointments, onCancel, onRefresh, onDoctorClick, onE
   );
 };
 
-// Test Orders Tab Component
-const TestOrdersTab = ({ orders, onRefresh }) => {
+// Browse available tests and book serials
+const TestsBrowseTab = ({ tests, loading, onSearch, onBookSerial, onViewOrders }) => {
+  const [filters, setFilters] = useState({
+    search: '',
+    category: '',
+    providerType: 'all'
+  });
+  const [filteredTests, setFilteredTests] = useState(tests);
+
+  useEffect(() => {
+    setFilteredTests(tests);
+  }, [tests]);
+
+  useEffect(() => {
+    let list = tests;
+    if (filters.providerType === 'hospital') {
+      list = list.filter((t) => t.hospitalId || t.hospital);
+    } else if (filters.providerType === 'diagnostic') {
+      list = list.filter((t) => t.diagnosticCenterId || t.diagnosticCenter);
+    }
+    if (filters.search.trim()) {
+      const q = filters.search.trim().toLowerCase();
+      list = list.filter(
+        (t) =>
+          t.name?.toLowerCase().includes(q) ||
+          t.code?.toLowerCase().includes(q) ||
+          t.hospital?.name?.toLowerCase().includes(q) ||
+          t.diagnosticCenter?.name?.toLowerCase().includes(q) ||
+          t.category?.toLowerCase().includes(q)
+      );
+    }
+    setFilteredTests(list);
+  }, [tests, filters.search, filters.providerType]);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    onSearch({
+      search: filters.search.trim(),
+      category: filters.category,
+      providerType: filters.providerType
+    });
+  };
+
+  const getProviderName = (test) => test.hospital?.name || test.diagnosticCenter?.name || 'N/A';
+  const getProviderType = (test) => (test.hospital || test.hospitalId ? 'Hospital' : 'Diagnostic Center');
+
+  return (
+    <div className="home-services-tab">
+      <div className="home-services-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Available Tests</h2>
+          <p style={{ margin: '0.25rem 0 0', color: '#6b7280', fontSize: '0.9rem' }}>
+            Search tests and book an even-numbered serial (2, 4, 6…)
+          </p>
+        </div>
+        <button type="button" className="btn-secondary" onClick={onViewOrders}>
+          View My Test Orders →
+        </button>
+      </div>
+
+      <form onSubmit={handleSearchSubmit} className="services-filters" style={{ marginTop: '1rem' }}>
+        <div className="search-box">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search by test name, code, hospital, or category..."
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+          />
+        </div>
+        <select
+          value={filters.category}
+          onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+          className="filter-select"
+        >
+          <option value="">All Categories</option>
+          <option value="pathology">Pathology</option>
+          <option value="radiology">Radiology</option>
+          <option value="cardiology">Cardiology</option>
+          <option value="other">Other</option>
+        </select>
+        <div className="filter-buttons">
+          <button
+            type="button"
+            className={`filter-btn ${filters.providerType === 'all' ? 'active' : ''}`}
+            onClick={() => setFilters({ ...filters, providerType: 'all' })}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className={`filter-btn ${filters.providerType === 'hospital' ? 'active' : ''}`}
+            onClick={() => setFilters({ ...filters, providerType: 'hospital' })}
+          >
+            Hospitals
+          </button>
+          <button
+            type="button"
+            className={`filter-btn ${filters.providerType === 'diagnostic' ? 'active' : ''}`}
+            onClick={() => setFilters({ ...filters, providerType: 'diagnostic' })}
+          >
+            Diagnostic Centers
+          </button>
+        </div>
+        <button type="submit" className="btn-primary" disabled={loading}>
+          {loading ? 'Searching...' : 'Search'}
+        </button>
+      </form>
+
+      {loading ? (
+        <div className="empty-state">
+          <div className="spinner" />
+          <p>Loading tests...</p>
+        </div>
+      ) : filteredTests.length === 0 ? (
+        <div className="empty-state">
+          <h3>No Tests Found</h3>
+          <p>Try a different search term or filter, or check back later.</p>
+        </div>
+      ) : (
+        <div className="services-grid">
+          {filteredTests.map((test) => (
+            <div key={test._id} className="service-card">
+              <div className="service-card-header">
+                <div className="service-provider">
+                  <span className="provider-type">{getProviderType(test)}</span>
+                  <h4>{getProviderName(test)}</h4>
+                </div>
+              </div>
+              <div className="service-card-body">
+                <h3 className="service-type">{test.name}</h3>
+                {test.code && <p className="service-note">Code: {test.code}</p>}
+                <p className="service-price">
+                  <span className="price-label">Price:</span>
+                  <span className="price-value">{test.price} tk</span>
+                </p>
+                <p className="service-note" style={{ textTransform: 'capitalize' }}>
+                  Category: {test.category || 'other'}
+                </p>
+                {test.duration != null && (
+                  <p className="service-note">Report in ~{test.duration} hours</p>
+                )}
+                {test.preparation && <p className="service-note">{test.preparation}</p>}
+              </div>
+              <div className="service-card-footer">
+                <button type="button" className="btn-primary btn-request" onClick={() => onBookSerial(test)}>
+                  Book Serial
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#6b7280' }}>
+        {filteredTests.length} test{filteredTests.length !== 1 ? 's' : ''} shown
+        {tests.length !== filteredTests.length ? ` (filtered from ${tests.length})` : ''}
+      </p>
+    </div>
+  );
+};
+
+// Test Orders Tab Component (lab orders + serial bookings)
+const TestOrdersTab = ({ orders, serialBookings, loading, onRefresh, navigate }) => {
+  const [viewMode, setViewMode] = useState('all');
+
   const getStatusBadge = (status) => {
     const badges = {
       pending: 'badge-warning',
@@ -659,25 +990,101 @@ const TestOrdersTab = ({ orders, onRefresh }) => {
     return badges[status] || 'badge-default';
   };
 
-  if (orders.length === 0) {
+  const formatDate = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  const totalCount = orders.length + serialBookings.length;
+
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <div className="spinner" />
+        <p>Loading test orders...</p>
+      </div>
+    );
+  }
+
+  if (totalCount === 0) {
     return (
       <div className="empty-state">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" strokeWidth="2" />
         </svg>
-        <h3>No Test Orders</h3>
-        <p>You haven't ordered any tests yet. Order one now!</p>
+        <h3>No Test Orders Yet</h3>
+        <p>Book a test serial or place a lab order to see them here.</p>
+        <button type="button" className="btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/user/dashboard', { state: { tab: 'tests' } })}>
+          Book Test Serial
+        </button>
       </div>
     );
   }
 
+  const showSerials = viewMode === 'all' || viewMode === 'serials';
+  const showOrders = viewMode === 'all' || viewMode === 'orders';
+
   return (
     <div className="test-orders-tab">
+      <div className="home-services-header" style={{ marginBottom: '1rem' }}>
+        <div className="view-mode-toggle">
+          <button
+            type="button"
+            className={`view-mode-btn ${viewMode === 'all' ? 'active' : ''}`}
+            onClick={() => setViewMode('all')}
+          >
+            All ({totalCount})
+          </button>
+          <button
+            type="button"
+            className={`view-mode-btn ${viewMode === 'serials' ? 'active' : ''}`}
+            onClick={() => setViewMode('serials')}
+          >
+            Serial Bookings ({serialBookings.length})
+          </button>
+          <button
+            type="button"
+            className={`view-mode-btn ${viewMode === 'orders' ? 'active' : ''}`}
+            onClick={() => setViewMode('orders')}
+          >
+            Lab Orders ({orders.length})
+          </button>
+        </div>
+        <button type="button" className="btn-primary" onClick={onRefresh} style={{ marginLeft: 'auto' }}>
+          Refresh
+        </button>
+      </div>
+
       <div className="orders-grid">
-        {orders.map((order) => (
+        {showSerials && serialBookings.map((booking) => (
+          <div key={booking._id} className="order-card">
+            <div className="order-header">
+              <h3>Serial #{booking.serialNumber}</h3>
+              <span className="badge badge-info">Serial</span>
+              <span className={`badge ${getStatusBadge(booking.status)}`}>
+                {booking.status}
+              </span>
+            </div>
+            <div className="order-details">
+              <p><strong>Booking:</strong> {booking.bookingNumber}</p>
+              <p><strong>Test:</strong> {booking.testName || booking.testId?.name}</p>
+              <p><strong>Provider:</strong> {booking.hospitalId?.name || booking.diagnosticCenterId?.name || 'N/A'}</p>
+              <p><strong>Date:</strong> {formatDate(booking.appointmentDate)}</p>
+              <p><strong>Time:</strong> {booking.timeSlot?.startTime} - {booking.timeSlot?.endTime}</p>
+              <p><strong>Price:</strong> {booking.testPrice} tk</p>
+            </div>
+          </div>
+        ))}
+
+        {showOrders && orders.map((order) => (
           <div key={order._id} className="order-card">
             <div className="order-header">
               <h3>Order #{order.orderNumber}</h3>
+              <span className="badge badge-default">Lab Order</span>
               <span className={`badge ${getStatusBadge(order.status)}`}>
                 {order.status}
               </span>
@@ -685,19 +1092,34 @@ const TestOrdersTab = ({ orders, onRefresh }) => {
             <div className="order-details">
               <p><strong>Provider:</strong> {order.hospitalId?.name || order.diagnosticCenterId?.name || 'N/A'}</p>
               <p><strong>Tests:</strong> {order.tests?.length || 0} test(s)</p>
-              <p><strong>Total:</strong> {order.totalAmount || 0} tk</p>
-              <p><strong>Date:</strong> {new Date(order.createdAt).toLocaleDateString()}</p>
+              {order.tests?.length > 0 && (
+                <ul style={{ margin: '0.25rem 0 0 1rem', fontSize: '0.9rem' }}>
+                  {order.tests.map((t, i) => (
+                    <li key={i}>{t.testName || t.name} — {t.price} tk</li>
+                  ))}
+                </ul>
+              )}
+              <p><strong>Total:</strong> {order.finalAmount ?? order.totalAmount ?? 0} tk</p>
+              <p><strong>Collection:</strong> {order.collectionType?.replace('_', ' ') || 'N/A'}</p>
+              <p><strong>Ordered:</strong> {formatDate(order.createdAt)}</p>
             </div>
           </div>
         ))}
       </div>
+
+      {viewMode === 'serials' && serialBookings.length === 0 && (
+        <p style={{ textAlign: 'center', color: '#6b7280', marginTop: '1rem' }}>No serial bookings. <button type="button" className="btn-link" onClick={() => navigate('/user/dashboard', { state: { tab: 'tests' } })}>Book a test serial</button></p>
+      )}
+      {viewMode === 'orders' && orders.length === 0 && (
+        <p style={{ textAlign: 'center', color: '#6b7280', marginTop: '1rem' }}>No lab orders yet.</p>
+      )}
     </div>
   );
 };
 
 // Home Services Tab Component
-const HomeServicesTab = ({ services, requests, onRefresh, onRequestService, onRefreshRequests }) => {
-  const [viewMode, setViewMode] = useState('browse'); // 'browse' or 'my-requests'
+const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, onRequestService, onBookSerial, onRefreshRequests }) => {
+  const [viewMode, setViewMode] = useState('browse'); // browse | my-requests | my-serials
   const [filterType, setFilterType] = useState('all'); // 'all', 'hospital', 'diagnostic'
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredServices, setFilteredServices] = useState(services);
@@ -765,6 +1187,15 @@ const HomeServicesTab = ({ services, requests, onRefresh, onRequestService, onRe
               <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
             </svg>
             My Requests ({requests.length})
+          </button>
+          <button
+            className={`view-mode-btn ${viewMode === 'my-serials' ? 'active' : ''}`}
+            onClick={() => setViewMode('my-serials')}
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+            </svg>
+            My Serials ({serialBookings.length})
           </button>
         </div>
       </div>
@@ -850,13 +1281,73 @@ const HomeServicesTab = ({ services, requests, onRefresh, onRequestService, onRe
                       </div>
                     )}
                   </div>
-                  <div className="service-card-footer">
+                  <div className="service-card-footer" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {(service.hospitalId || service.hospital) && onBookSerial && (
+                      <button
+                        className="btn-primary btn-request"
+                        onClick={() => onBookSerial(service)}
+                      >
+                        Book Serial
+                      </button>
+                    )}
                     <button 
                       className="btn-primary btn-request"
+                      style={{ background: (service.hospitalId || service.hospital) ? '#6b7280' : undefined }}
                       onClick={() => onRequestService(service)}
                     >
-                      Request Service
+                      {(service.hospitalId || service.hospital) ? 'Request (Manual)' : 'Request Service'}
                     </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {viewMode === 'my-serials' && (
+        <div className="my-requests">
+          {serialBookings.length === 0 ? (
+            <div className="empty-state">
+              <h3>No Serial Bookings Yet</h3>
+              <p>Book a hospital home service serial to see it here.</p>
+            </div>
+          ) : (
+            <div className="requests-list">
+              {serialBookings.map((booking) => (
+                <div key={booking._id} className="request-card">
+                  <div className="request-header">
+                    <div className="request-number">
+                      <strong>{booking.bookingNumber}</strong>
+                      <span className={`badge ${getStatusBadge(booking.status)}`}>{booking.status}</span>
+                    </div>
+                    <span>Serial #{booking.serialNumber}</span>
+                  </div>
+                  <div className="request-body">
+                    <div className="request-info-row">
+                      <div className="info-item">
+                        <label>Service:</label>
+                        <span>{booking.serviceType || booking.homeServiceId?.serviceType}</span>
+                      </div>
+                      <div className="info-item">
+                        <label>Hospital:</label>
+                        <span>{booking.hospitalId?.name || 'N/A'}</span>
+                      </div>
+                      <div className="info-item">
+                        <label>Date:</label>
+                        <span>{formatDate(booking.appointmentDate)}</span>
+                      </div>
+                      <div className="info-item">
+                        <label>Time:</label>
+                        <span>{booking.timeSlot?.startTime} - {booking.timeSlot?.endTime}</span>
+                      </div>
+                    </div>
+                    {booking.homeAddress && (
+                      <div className="request-address">
+                        <label>Address:</label>
+                        <span>{booking.homeAddress.street}, {booking.homeAddress.city}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -988,7 +1479,12 @@ const HistoryTab = ({ history, onRefresh }) => {
               )}
             </div>
             <div className="history-content">
-              <h4>{item.type === 'serial' ? 'Appointment' : 'Home Service'}</h4>
+              <h4>
+                {item.type === 'serial' ? 'Appointment'
+                  : item.type === 'test_serial' ? `Test Serial #${item.serialNumber || ''}`
+                  : item.type === 'home_service_serial' ? 'Home Service Serial'
+                  : 'Home Service'}
+              </h4>
               <p>{new Date(item.createdAt).toLocaleDateString()}</p>
               <span className={`badge ${item.status === 'completed' ? 'badge-success' : 'badge-warning'}`}>
                 {item.status}
@@ -1014,7 +1510,7 @@ const SearchTab = ({ navigate }) => {
           <p>Find doctors by specialization, location, or name</p>
         </button>
 
-        <button className="search-option-card" onClick={() => navigate('/search-tests')}>
+        <button className="search-option-card" onClick={() => navigate('/user/dashboard', { state: { tab: 'tests' } })}>
           <svg viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zM7 8a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
           </svg>
@@ -1368,12 +1864,10 @@ const HomeServiceRequestModal = ({ service, user, onSubmit, onClose }) => {
         notes: formData.notes || undefined
       };
 
-      if (service.hospitalId || service.hospital) {
-        requestData.hospitalId = service.hospitalId || service.hospital.id;
-      }
-      if (service.diagnosticCenterId || service.diagnosticCenter) {
-        requestData.diagnosticCenterId = service.diagnosticCenterId || service.diagnosticCenter.id;
-      }
+      const hid = resolveEntityId(service.hospital) || resolveEntityId(service.hospitalId);
+      const cid = resolveEntityId(service.diagnosticCenter) || resolveEntityId(service.diagnosticCenterId);
+      if (hid) requestData.hospitalId = hid;
+      if (cid) requestData.diagnosticCenterId = cid;
 
       await onSubmit(requestData);
     } catch (err) {
@@ -1559,6 +2053,388 @@ const HomeServiceRequestModal = ({ service, user, onSubmit, onClose }) => {
               </button>
               <button type="submit" className="btn-primary" disabled={submitting}>
                 {submitting ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HomeServiceSerialBookingModal = ({ service, user, onSubmit, onClose }) => {
+  const hospitalId = resolveEntityId(service.hospital) || resolveEntityId(service.hospitalId);
+  const serviceId = resolveEntityId(service) || service._id;
+  const [selectedDate, setSelectedDate] = useState('');
+  const [availableSerials, setAvailableSerials] = useState([]);
+  const [selectedSerial, setSelectedSerial] = useState(null);
+  const [loadingSerials, setLoadingSerials] = useState(false);
+  const [serialError, setSerialError] = useState('');
+  const [servicePrice, setServicePrice] = useState(service.price);
+  const [formData, setFormData] = useState({
+    patientName: user?.name || '',
+    patientAge: '',
+    patientGender: user?.gender || '',
+    phoneNumber: user?.phone || '',
+    homeAddress: { street: '', city: '', state: '', zipCode: '', country: '' },
+    notes: ''
+  });
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!selectedDate || !hospitalId) return;
+    const loadSerials = async () => {
+      setLoadingSerials(true);
+      setSerialError('');
+      setSelectedSerial(null);
+      try {
+        const response = await api.get(
+          `/patient/hospitals/${hospitalId}/home-services/${serviceId}/serials?date=${selectedDate}`
+        );
+        if (response.data.success) {
+          setAvailableSerials(response.data.data.availableSerials || []);
+          if (response.data.data.servicePrice) setServicePrice(response.data.data.servicePrice);
+          if (response.data.data.message) setSerialError(response.data.data.message);
+        }
+      } catch (err) {
+        setSerialError(err.response?.data?.message || 'Serial booking not available for this service');
+        setAvailableSerials([]);
+      } finally {
+        setLoadingSerials(false);
+      }
+    };
+    loadSerials();
+  }, [selectedDate, hospitalId, serviceId]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name.startsWith('address.')) {
+      const field = name.split('.')[1];
+      setFormData((prev) => ({
+        ...prev,
+        homeAddress: { ...prev.homeAddress, [field]: value }
+      }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  const validate = () => {
+    const newErrors = {};
+    if (!selectedDate) newErrors.date = 'Date is required';
+    if (!selectedSerial) newErrors.serial = 'Please select a serial';
+    if (!formData.patientName.trim()) newErrors.patientName = 'Patient name is required';
+    if (!formData.patientAge || formData.patientAge < 0) newErrors.patientAge = 'Valid age is required';
+    if (!formData.patientGender) newErrors.patientGender = 'Gender is required';
+    if (!formData.phoneNumber.trim()) newErrors.phoneNumber = 'Phone number is required';
+    if (!formData.homeAddress.street.trim()) newErrors['address.street'] = 'Street address is required';
+    if (!formData.homeAddress.city.trim()) newErrors['address.city'] = 'City is required';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        hospitalId,
+        homeServiceId: serviceId,
+        serialNumber: selectedSerial.serialNumber,
+        date: selectedDate,
+        patientName: formData.patientName,
+        patientAge: parseInt(formData.patientAge, 10),
+        patientGender: formData.patientGender,
+        phoneNumber: formData.phoneNumber,
+        homeAddress: formData.homeAddress,
+        notes: formData.notes || undefined
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const minDate = new Date().toISOString().split('T')[0];
+
+  return (
+    <div className="home-service-modal-overlay" onClick={onClose}>
+      <div className="home-service-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+        <div className="home-service-modal-header">
+          <h2>Book Home Service Serial</h2>
+          <button onClick={onClose} className="modal-close-btn">×</button>
+        </div>
+        <div className="home-service-modal-body">
+          <div className="service-summary">
+            <h3>{service.serviceType}</h3>
+            <p>{service.hospital?.name}</p>
+            <p className="service-price-summary">Price: {servicePrice} tk</p>
+          </div>
+          {!hospitalId ? (
+            <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
+              Could not determine hospital for this service. Please refresh the page and try again.
+            </div>
+          ) : (
+          <form onSubmit={handleSubmit} className="request-form">
+            <div className="form-section">
+              <h4>Select Date & Serial</h4>
+              <div className="form-group">
+                <label>Appointment Date *</label>
+                <input
+                  type="date"
+                  min={minDate}
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className={errors.date ? 'error' : ''}
+                />
+                {errors.date && <span className="error-text">{errors.date}</span>}
+              </div>
+              {loadingSerials && <p>Loading available serials...</p>}
+              {serialError && !loadingSerials && <p className="error-text">{serialError}</p>}
+              {selectedDate && !loadingSerials && availableSerials.length > 0 && (
+                <div className="serials-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  {availableSerials.map((s) => (
+                    <button
+                      key={s.serialNumber}
+                      type="button"
+                      className={`serial-button ${selectedSerial?.serialNumber === s.serialNumber ? 'selected' : ''}`}
+                      style={{
+                        padding: '0.75rem',
+                        border: selectedSerial?.serialNumber === s.serialNumber ? '2px solid #667eea' : '1px solid #ddd',
+                        borderRadius: '8px',
+                        background: selectedSerial?.serialNumber === s.serialNumber ? '#eef2ff' : '#fff',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setSelectedSerial(s)}
+                    >
+                      <div><strong>#{s.serialNumber}</strong></div>
+                      <small>{s.time} - {s.endTime}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {errors.serial && <span className="error-text">{errors.serial}</span>}
+            </div>
+
+            <div className="form-section">
+              <h4>Patient Information</h4>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Patient Name *</label>
+                  <input type="text" name="patientName" value={formData.patientName} onChange={handleChange} className={errors.patientName ? 'error' : ''} />
+                  {errors.patientName && <span className="error-text">{errors.patientName}</span>}
+                </div>
+                <div className="form-group">
+                  <label>Age *</label>
+                  <input type="number" name="patientAge" value={formData.patientAge} onChange={handleChange} min="0" className={errors.patientAge ? 'error' : ''} />
+                  {errors.patientAge && <span className="error-text">{errors.patientAge}</span>}
+                </div>
+                <div className="form-group">
+                  <label>Gender *</label>
+                  <select name="patientGender" value={formData.patientGender} onChange={handleChange} className={errors.patientGender ? 'error' : ''}>
+                    <option value="">Select</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                  {errors.patientGender && <span className="error-text">{errors.patientGender}</span>}
+                </div>
+                <div className="form-group">
+                  <label>Phone *</label>
+                  <input type="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} className={errors.phoneNumber ? 'error' : ''} />
+                  {errors.phoneNumber && <span className="error-text">{errors.phoneNumber}</span>}
+                </div>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h4>Home Address</h4>
+              <div className="form-grid">
+                <div className="form-group full-width">
+                  <label>Street *</label>
+                  <input type="text" name="address.street" value={formData.homeAddress.street} onChange={handleChange} className={errors['address.street'] ? 'error' : ''} />
+                  {errors['address.street'] && <span className="error-text">{errors['address.street']}</span>}
+                </div>
+                <div className="form-group">
+                  <label>City *</label>
+                  <input type="text" name="address.city" value={formData.homeAddress.city} onChange={handleChange} className={errors['address.city'] ? 'error' : ''} />
+                  {errors['address.city'] && <span className="error-text">{errors['address.city']}</span>}
+                </div>
+              </div>
+            </div>
+
+            <div className="form-actions">
+              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+              <button type="submit" className="btn-primary" disabled={submitting || !hospitalId}>
+                {submitting ? 'Booking...' : 'Confirm Booking'}
+              </button>
+            </div>
+          </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TestSerialBookingModal = ({ test, onSuccess, onClose, setError }) => {
+  const hospitalId = resolveEntityId(test.hospital) || resolveEntityId(test.hospitalId);
+  const diagnosticCenterId = resolveEntityId(test.diagnosticCenter) || resolveEntityId(test.diagnosticCenterId);
+  const testId = resolveEntityId(test) || test._id;
+  const isHospital = Boolean(hospitalId);
+
+  const [selectedDate, setSelectedDate] = useState('');
+  const [availableSerials, setAvailableSerials] = useState([]);
+  const [selectedSerial, setSelectedSerial] = useState(null);
+  const [loadingSerials, setLoadingSerials] = useState(false);
+  const [serialError, setSerialError] = useState('');
+  const [testPrice, setTestPrice] = useState(test.price);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!selectedDate || (!hospitalId && !diagnosticCenterId)) return;
+    const loadSerials = async () => {
+      setLoadingSerials(true);
+      setSerialError('');
+      setSelectedSerial(null);
+      try {
+        const url = isHospital
+          ? `/patient/hospitals/${hospitalId}/tests/${testId}/serials?date=${selectedDate}`
+          : `/patient/diagnostic-centers/${diagnosticCenterId}/tests/${testId}/serials?date=${selectedDate}`;
+        const response = await api.get(url);
+        if (response.data.success) {
+          setAvailableSerials(response.data.data.availableSerials || []);
+          if (response.data.data.testPrice) setTestPrice(response.data.data.testPrice);
+          if (response.data.data.message) setSerialError(response.data.data.message);
+        }
+      } catch (err) {
+        setSerialError(err.response?.data?.message || 'Serial booking not available. Ask the provider to enable serial settings.');
+        setAvailableSerials([]);
+      } finally {
+        setLoadingSerials(false);
+      }
+    };
+    loadSerials();
+  }, [selectedDate, hospitalId, diagnosticCenterId, testId, isHospital]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedDate || !selectedSerial) {
+      setError('Please select date and serial');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const body = {
+        testId,
+        serialNumber: selectedSerial.serialNumber,
+        date: selectedDate
+      };
+      if (isHospital) body.hospitalId = hospitalId;
+      else body.diagnosticCenterId = diagnosticCenterId;
+
+      const response = await api.post('/patient/test-serials/book', body);
+      if (response.data.success) {
+        onSuccess();
+      } else {
+        setError(response.data.message || 'Booking failed');
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to book serial');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const minDate = new Date().toISOString().split('T')[0];
+  const providerName = test.hospital?.name || test.diagnosticCenter?.name;
+
+  return (
+    <div className="home-service-modal-overlay" onClick={onClose}>
+      <div className="home-service-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="home-service-modal-header">
+          <h2>Book Test Serial</h2>
+          <button type="button" className="modal-close-btn" onClick={onClose}>×</button>
+        </div>
+        <div className="home-service-modal-body">
+          <div className="service-summary">
+            <h3>{test.name}</h3>
+            <p className="service-provider">{providerName}</p>
+            <p className="service-price-summary">Price: {testPrice} tk</p>
+          </div>
+          <form onSubmit={handleSubmit} className="request-form">
+            <div className="form-section">
+              <div className="form-group">
+                <label>Appointment Date *</label>
+                <input
+                  type="date"
+                  min={minDate}
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  required
+                />
+              </div>
+              {loadingSerials && <p>Loading available serials...</p>}
+              {serialError && !loadingSerials && <p className="error-text">{serialError}</p>}
+              {selectedDate && !loadingSerials && availableSerials.length > 0 && (
+                <div className="form-group">
+                  <label>Select Serial (even numbers only) *</label>
+                  <div className="serials-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    {availableSerials.map((s) => (
+                      <button
+                        key={s.serialNumber}
+                        type="button"
+                        className={`serial-button ${selectedSerial?.serialNumber === s.serialNumber ? 'selected' : ''}`}
+                        style={{
+                          padding: '0.6rem',
+                          border: selectedSerial?.serialNumber === s.serialNumber ? '2px solid #667eea' : '1px solid #ddd',
+                          borderRadius: '8px',
+                          background: selectedSerial?.serialNumber === s.serialNumber ? '#eef2ff' : '#fff',
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => setSelectedSerial(s)}
+                      >
+                        <div><strong>#{s.serialNumber}</strong></div>
+                        <small>{s.time} – {s.endTime}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="form-actions">
+              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+              <button type="submit" className="btn-primary" disabled={submitting || !selectedSerial}>
+                {submitting ? 'Booking...' : 'Confirm Booking'}
               </button>
             </div>
           </form>
