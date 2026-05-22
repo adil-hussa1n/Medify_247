@@ -10,7 +10,13 @@ const homeServiceSerialBookingSchema = new mongoose.Schema({
   hospitalId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
-    required: true,
+    default: null,
+    index: true
+  },
+  diagnosticCenterId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'DiagnosticCenter',
+    default: null,
     index: true
   },
   homeServiceId: {
@@ -92,7 +98,7 @@ const homeServiceSerialBookingSchema = new mongoose.Schema({
   },
   cancelledBy: {
     type: String,
-    enum: ['patient', 'hospital', 'system']
+    enum: ['patient', 'hospital', 'diagnostic_center', 'system']
   },
   cancellationReason: {
     type: String
@@ -112,12 +118,29 @@ const homeServiceSerialBookingSchema = new mongoose.Schema({
   timestamps: true
 });
 
+homeServiceSerialBookingSchema.pre('save', function(next) {
+  if (!this.hospitalId && !this.diagnosticCenterId) {
+    return next(new Error('Either hospitalId or diagnosticCenterId must be provided'));
+  }
+  if (this.hospitalId && this.diagnosticCenterId) {
+    return next(new Error('Home service serial booking cannot belong to both hospital and diagnostic center'));
+  }
+  next();
+});
+
 homeServiceSerialBookingSchema.index({ patientId: 1, createdAt: -1 });
 homeServiceSerialBookingSchema.index({ hospitalId: 1, appointmentDate: 1, status: 1 });
+homeServiceSerialBookingSchema.index({ diagnosticCenterId: 1, appointmentDate: 1, status: 1 });
 homeServiceSerialBookingSchema.index({ homeServiceId: 1, appointmentDate: 1, serialNumber: 1 });
+
 homeServiceSerialBookingSchema.index(
   { hospitalId: 1, homeServiceId: 1, appointmentDate: 1, serialNumber: 1 },
-  { unique: true }
+  { unique: true, sparse: true, partialFilterExpression: { hospitalId: { $ne: null } } }
+);
+
+homeServiceSerialBookingSchema.index(
+  { diagnosticCenterId: 1, homeServiceId: 1, appointmentDate: 1, serialNumber: 1 },
+  { unique: true, sparse: true, partialFilterExpression: { diagnosticCenterId: { $ne: null } } }
 );
 
 const HomeServiceSerialBooking = mongoose.model('HomeServiceSerialBooking', homeServiceSerialBookingSchema);

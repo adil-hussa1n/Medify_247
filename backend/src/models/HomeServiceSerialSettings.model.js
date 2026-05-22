@@ -4,7 +4,13 @@ const homeServiceSerialSettingsSchema = new mongoose.Schema({
   hospitalId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
-    required: true,
+    default: null,
+    index: true
+  },
+  diagnosticCenterId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'DiagnosticCenter',
+    default: null,
     index: true
   },
   homeServiceId: {
@@ -70,9 +76,29 @@ homeServiceSerialSettingsSchema.pre('save', function(next) {
   next();
 });
 
-homeServiceSerialSettingsSchema.index({ homeServiceId: 1, hospitalId: 1 }, { unique: true });
-homeServiceSerialSettingsSchema.index({ hospitalId: 1, homeServiceId: 1 });
+homeServiceSerialSettingsSchema.pre('save', function(next) {
+  if (!this.hospitalId && !this.diagnosticCenterId) {
+    return next(new Error('Either hospitalId or diagnosticCenterId must be provided'));
+  }
+  if (this.hospitalId && this.diagnosticCenterId) {
+    return next(new Error('Home service serial settings cannot belong to both hospital and diagnostic center'));
+  }
+  next();
+});
+
+homeServiceSerialSettingsSchema.index({ homeServiceId: 1, hospitalId: 1 });
+homeServiceSerialSettingsSchema.index({ homeServiceId: 1, diagnosticCenterId: 1 });
 homeServiceSerialSettingsSchema.index({ homeServiceId: 1, isActive: 1 });
+
+homeServiceSerialSettingsSchema.index(
+  { homeServiceId: 1, hospitalId: 1 },
+  { unique: true, sparse: true, partialFilterExpression: { hospitalId: { $ne: null }, diagnosticCenterId: null } }
+);
+
+homeServiceSerialSettingsSchema.index(
+  { homeServiceId: 1, diagnosticCenterId: 1 },
+  { unique: true, sparse: true, partialFilterExpression: { diagnosticCenterId: { $ne: null }, hospitalId: null } }
+);
 
 const HomeServiceSerialSettings = mongoose.model('HomeServiceSerialSettings', homeServiceSerialSettingsSchema);
 

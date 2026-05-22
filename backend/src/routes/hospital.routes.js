@@ -42,7 +42,8 @@ import {
   getHomeServiceSerialSettings,
   getHomeServiceSerialStats,
   getHomeServiceSerialBookings,
-  updateHomeServiceSerialBookingStatus
+  updateHomeServiceSerialBookingStatus,
+  updateHomeServiceSerialBooking
 } from '../controllers/hospital.controller.js';
 import {
   getPermissionCatalog,
@@ -202,6 +203,19 @@ router.put('/:hospitalId/home-service-serial-bookings/:bookingId/status', ...hos
   body('status').isIn(['pending', 'confirmed', 'completed', 'cancelled']).withMessage('Invalid status'),
   body('notes').optional().trim()
 ], updateHomeServiceSerialBookingStatus);
+
+router.put('/:hospitalId/home-service-serial-bookings/:bookingId', ...hospitalGuard('home_serials:manage'), [
+  body('status').optional().isIn(['pending', 'confirmed', 'completed', 'cancelled']).withMessage('Invalid status'),
+  body('notes').optional().trim(),
+  body('date').optional().isISO8601().withMessage('Valid date is required (YYYY-MM-DD)'),
+  body('serialNumber').optional().isInt({ min: 1 }).withMessage('Valid serial number is required'),
+  body('patientName').optional().trim().notEmpty(),
+  body('patientAge').optional().isInt({ min: 0 }),
+  body('patientGender').optional().isIn(['male', 'female', 'other']),
+  body('phoneNumber').optional().trim().notEmpty(),
+  body('homeAddress.street').optional().trim().notEmpty(),
+  body('homeAddress.city').optional().trim().notEmpty()
+], updateHomeServiceSerialBooking);
 
 // Doctor serial settings
 router.post('/:hospitalId/doctors/:doctorId/serial-settings', ...hospitalGuard('doctors:manage'), [

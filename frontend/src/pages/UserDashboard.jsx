@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import Navbar from '../components/Navbar';
+import HomeServiceDetailsModal from '../components/HomeServiceDetailsModal';
+import HomeServiceSerialUpdateModal from '../components/HomeServiceSerialUpdateModal';
 import './UserDashboard.css';
 
 /** Extract MongoDB id string from populated ref or plain id */
@@ -498,6 +500,9 @@ const UserDashboard = () => {
               onRequestService={handleRequestService}
               onBookSerial={handleBookSerial}
               onRefreshRequests={fetchHomeServiceRequests}
+              onRefreshSerials={fetchHomeServiceSerialBookings}
+              setSuccess={setSuccess}
+              setError={setError}
             />
           )}
           {activeTab === 'history' && (
@@ -1118,11 +1123,13 @@ const TestOrdersTab = ({ orders, serialBookings, loading, onRefresh, navigate })
 };
 
 // Home Services Tab Component
-const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, onRequestService, onBookSerial, onRefreshRequests }) => {
+const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, onRequestService, onBookSerial, onRefreshRequests, onRefreshSerials, setSuccess, setError }) => {
   const [viewMode, setViewMode] = useState('browse'); // browse | my-requests | my-serials
   const [filterType, setFilterType] = useState('all'); // 'all', 'hospital', 'diagnostic'
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredServices, setFilteredServices] = useState(services);
+  const [detailsService, setDetailsService] = useState(null);
+  const [updateBooking, setUpdateBooking] = useState(null);
 
   useEffect(() => {
     let filtered = services;
@@ -1282,7 +1289,15 @@ const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, o
                     )}
                   </div>
                   <div className="service-card-footer" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {(service.hospitalId || service.hospital) && onBookSerial && (
+                    <button
+                      type="button"
+                      className="btn-secondary btn-request"
+                      style={{ background: '#fff', color: '#667eea', border: '1px solid #667eea' }}
+                      onClick={() => setDetailsService(service)}
+                    >
+                      View Details
+                    </button>
+                    {onBookSerial && (
                       <button
                         className="btn-primary btn-request"
                         onClick={() => onBookSerial(service)}
@@ -1292,10 +1307,10 @@ const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, o
                     )}
                     <button 
                       className="btn-primary btn-request"
-                      style={{ background: (service.hospitalId || service.hospital) ? '#6b7280' : undefined }}
+                      style={{ background: '#6b7280' }}
                       onClick={() => onRequestService(service)}
                     >
-                      {(service.hospitalId || service.hospital) ? 'Request (Manual)' : 'Request Service'}
+                      Request (Manual)
                     </button>
                   </div>
                 </div>
@@ -1305,12 +1320,23 @@ const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, o
         </div>
       )}
 
+      {detailsService && (
+        <HomeServiceDetailsModal
+          serviceId={detailsService._id}
+          mode="patient"
+          initialService={detailsService}
+          onClose={() => setDetailsService(null)}
+          onBookSerial={onBookSerial}
+          onRequestService={onRequestService}
+        />
+      )}
+
       {viewMode === 'my-serials' && (
         <div className="my-requests">
           {serialBookings.length === 0 ? (
             <div className="empty-state">
               <h3>No Serial Bookings Yet</h3>
-              <p>Book a hospital home service serial to see it here.</p>
+              <p>Book a home service serial (hospital or diagnostic center) to see it here.</p>
             </div>
           ) : (
             <div className="requests-list">
@@ -1330,8 +1356,8 @@ const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, o
                         <span>{booking.serviceType || booking.homeServiceId?.serviceType}</span>
                       </div>
                       <div className="info-item">
-                        <label>Hospital:</label>
-                        <span>{booking.hospitalId?.name || 'N/A'}</span>
+                        <label>Provider:</label>
+                        <span>{booking.hospitalId?.name || booking.diagnosticCenterId?.name || 'N/A'}</span>
                       </div>
                       <div className="info-item">
                         <label>Date:</label>
@@ -1349,11 +1375,37 @@ const HomeServicesTab = ({ services, requests, serialBookings = [], onRefresh, o
                       </div>
                     )}
                   </div>
+                  {!['completed', 'cancelled'].includes(booking.status) && (
+                    <div className="request-actions" style={{ marginTop: '0.75rem' }}>
+                      <button
+                        type="button"
+                        className="btn-primary btn-request"
+                        style={{ background: '#0ea5e9' }}
+                        onClick={() => setUpdateBooking(booking)}
+                      >
+                        Update Serial
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {updateBooking && (
+        <HomeServiceSerialUpdateModal
+          booking={updateBooking}
+          mode="patient"
+          onClose={() => setUpdateBooking(null)}
+          onSuccess={() => {
+            setSuccess?.('Serial booking updated successfully');
+            onRefreshSerials?.();
+            setTimeout(() => setSuccess?.(''), 3000);
+          }}
+          setError={setError}
+        />
       )}
 
       {viewMode === 'my-requests' && (
@@ -2064,6 +2116,9 @@ const HomeServiceRequestModal = ({ service, user, onSubmit, onClose }) => {
 
 const HomeServiceSerialBookingModal = ({ service, user, onSubmit, onClose }) => {
   const hospitalId = resolveEntityId(service.hospital) || resolveEntityId(service.hospitalId);
+  const diagnosticCenterId = resolveEntityId(service.diagnosticCenter) || resolveEntityId(service.diagnosticCenterId);
+  const isDiagnostic = Boolean(diagnosticCenterId && !hospitalId);
+  const providerId = hospitalId || diagnosticCenterId;
   const serviceId = resolveEntityId(service) || service._id;
   const [selectedDate, setSelectedDate] = useState('');
   const [availableSerials, setAvailableSerials] = useState([]);
@@ -2095,15 +2150,16 @@ const HomeServiceSerialBookingModal = ({ service, user, onSubmit, onClose }) => 
   }, [onClose]);
 
   useEffect(() => {
-    if (!selectedDate || !hospitalId) return;
+    if (!selectedDate || !providerId) return;
     const loadSerials = async () => {
       setLoadingSerials(true);
       setSerialError('');
       setSelectedSerial(null);
       try {
-        const response = await api.get(
-          `/patient/hospitals/${hospitalId}/home-services/${serviceId}/serials?date=${selectedDate}`
-        );
+        const url = isDiagnostic
+          ? `/patient/diagnostic-centers/${diagnosticCenterId}/home-services/${serviceId}/serials?date=${selectedDate}`
+          : `/patient/hospitals/${hospitalId}/home-services/${serviceId}/serials?date=${selectedDate}`;
+        const response = await api.get(url);
         if (response.data.success) {
           setAvailableSerials(response.data.data.availableSerials || []);
           if (response.data.data.servicePrice) setServicePrice(response.data.data.servicePrice);
@@ -2117,7 +2173,7 @@ const HomeServiceSerialBookingModal = ({ service, user, onSubmit, onClose }) => 
       }
     };
     loadSerials();
-  }, [selectedDate, hospitalId, serviceId]);
+  }, [selectedDate, hospitalId, diagnosticCenterId, providerId, serviceId, isDiagnostic]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -2152,8 +2208,7 @@ const HomeServiceSerialBookingModal = ({ service, user, onSubmit, onClose }) => 
     if (!validate()) return;
     setSubmitting(true);
     try {
-      await onSubmit({
-        hospitalId,
+      const payload = {
         homeServiceId: serviceId,
         serialNumber: selectedSerial.serialNumber,
         date: selectedDate,
@@ -2163,7 +2218,10 @@ const HomeServiceSerialBookingModal = ({ service, user, onSubmit, onClose }) => 
         phoneNumber: formData.phoneNumber,
         homeAddress: formData.homeAddress,
         notes: formData.notes || undefined
-      });
+      };
+      if (isDiagnostic) payload.diagnosticCenterId = diagnosticCenterId;
+      else payload.hospitalId = hospitalId;
+      await onSubmit(payload);
     } finally {
       setSubmitting(false);
     }
@@ -2181,12 +2239,12 @@ const HomeServiceSerialBookingModal = ({ service, user, onSubmit, onClose }) => 
         <div className="home-service-modal-body">
           <div className="service-summary">
             <h3>{service.serviceType}</h3>
-            <p>{service.hospital?.name}</p>
+            <p>{service.hospital?.name || service.diagnosticCenter?.name}</p>
             <p className="service-price-summary">Price: {servicePrice} tk</p>
           </div>
-          {!hospitalId ? (
+          {!providerId ? (
             <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
-              Could not determine hospital for this service. Please refresh the page and try again.
+              Could not determine provider for this service. Please refresh the page and try again.
             </div>
           ) : (
           <form onSubmit={handleSubmit} className="request-form">

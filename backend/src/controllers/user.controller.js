@@ -9,6 +9,12 @@ import {
   resolveEffectivePermissions
 } from '../utils/hospitalStaff.util.js';
 import { HOSPITAL_ROLE_LABELS } from '../constants/hospitalPermissions.js';
+import {
+  ensureDiagnosticCenterStaffMembership,
+  findDiagnosticCenterForUser,
+  resolveEffectivePermissions as resolveDcPermissions
+} from '../utils/diagnosticCenterStaff.util.js';
+import { DC_ROLE_LABELS } from '../constants/diagnosticCenterPermissions.js';
 
 /**
  * GET /api/users/:id
@@ -37,6 +43,7 @@ export const getUserProfile = async (req, res) => {
 
     let roleData = null;
     let hospitalAccess = null;
+    let diagnosticCenterAccess = null;
 
     // Get role-specific data
     if (user.role === 'doctor') {
@@ -57,7 +64,19 @@ export const getUserProfile = async (req, res) => {
         }
       }
     } else if (user.role === 'diagnostic_center_admin') {
-      roleData = await DiagnosticCenter.findOne({ userId: user._id });
+      roleData = await findDiagnosticCenterForUser(user._id);
+      if (roleData) {
+        const membership = await ensureDiagnosticCenterStaffMembership(roleData, user._id);
+        if (membership) {
+          diagnosticCenterAccess = {
+            centerId: roleData._id,
+            role: membership.role,
+            roleLabel: DC_ROLE_LABELS[membership.role],
+            permissions: resolveDcPermissions(membership),
+            isOwner: membership.role === 'owner'
+          };
+        }
+      }
     }
 
     res.json({
@@ -65,7 +84,8 @@ export const getUserProfile = async (req, res) => {
       data: {
         user,
         roleData,
-        hospitalAccess
+        hospitalAccess,
+        diagnosticCenterAccess
       }
     });
   } catch (error) {

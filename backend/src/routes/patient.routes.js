@@ -27,6 +27,7 @@ import {
   getAvailableHomeServiceSerials,
   bookHomeServiceSerial,
   getMyHomeServiceSerialBookings,
+  updateMyHomeServiceSerialBooking,
   getMyTestSerialBookings
 } from '../controllers/patient.controller.js';
 import { authenticate, authorize } from '../middlewares/auth.middleware.js';
@@ -95,8 +96,13 @@ router.post('/home-services/request', [
 
 // Home Service Serial booking (Hospital)
 router.get('/hospitals/:hospitalId/home-services/:serviceId/serials', getAvailableHomeServiceSerials);
+
+// Home Service Serial booking (Diagnostic Center)
+router.get('/diagnostic-centers/:diagnosticCenterId/home-services/:serviceId/serials', getAvailableHomeServiceSerials);
+
 router.post('/home-service-serials/book', [
-  body('hospitalId').notEmpty().withMessage('Hospital ID is required'),
+  body('hospitalId').optional().notEmpty().withMessage('Hospital ID is required if diagnosticCenterId is not provided'),
+  body('diagnosticCenterId').optional().notEmpty().withMessage('Diagnostic center ID is required if hospitalId is not provided'),
   body('homeServiceId').notEmpty().withMessage('Home service ID is required'),
   body('serialNumber').isInt({ min: 1 }).withMessage('Valid serial number is required'),
   body('date').isISO8601().withMessage('Valid date is required (YYYY-MM-DD)'),
@@ -109,6 +115,15 @@ router.post('/home-service-serials/book', [
   body('notes').optional().trim()
 ], bookHomeServiceSerial);
 router.get('/home-service-serials/my-bookings', getMyHomeServiceSerialBookings);
+router.put('/home-service-serials/:bookingId', [
+  body('status').optional().isIn(['cancelled']).withMessage('Patients can only cancel bookings'),
+  body('notes').optional().trim(),
+  body('date').optional().isISO8601().withMessage('Valid date is required (YYYY-MM-DD)'),
+  body('serialNumber').optional().isInt({ min: 1 }).withMessage('Valid serial number is required'),
+  body('phoneNumber').optional().trim().notEmpty(),
+  body('homeAddress.street').optional().trim().notEmpty(),
+  body('homeAddress.city').optional().trim().notEmpty()
+], updateMyHomeServiceSerialBooking);
 
 // User History
 router.get('/history', getMyHistory);

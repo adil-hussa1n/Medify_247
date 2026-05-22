@@ -16,7 +16,11 @@ import HomeServiceSerialSettings from '../models/HomeServiceSerialSettings.model
 import HomeServiceSerialBooking from '../models/HomeServiceSerialBooking.model.js';
 import HospitalStaff from '../models/HospitalStaff.model.js';
 import { getPermissionsForRole } from '../constants/hospitalPermissions.js';
-import { offDaysToAvailableDays } from '../utils/homeServiceSerial.util.js';
+import { offDaysToAvailableDays, buildSerialBookingSummary } from '../utils/homeServiceSerial.util.js';
+import {
+  findProviderHomeServiceSerialBooking,
+  applyHomeServiceSerialBookingFields
+} from '../services/homeServiceSerialBooking.service.js';
 import { createAndSendNotification } from '../services/notification.service.js';
 import { validationResult } from 'express-validator';
 import moment from 'moment';
@@ -1418,9 +1422,16 @@ export const getHomeService = async (req, res) => {
       });
     }
 
+    const serialSettings = await HomeServiceSerialSettings.findOne({
+      homeServiceId: serviceId,
+      hospitalId
+    });
+    const homeServiceObj = homeService.toObject();
+    homeServiceObj.serialBooking = buildSerialBookingSummary(serialSettings, homeService);
+
     res.json({
       success: true,
-      data: { homeService }
+      data: { homeService: homeServiceObj }
     });
   } catch (error) {
     console.error('Get home service error:', error);
@@ -3428,6 +3439,65 @@ export const updateHomeServiceSerialBookingStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update booking status',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * PUT /api/hospitals/:hospitalId/home-service-serial-bookings/:bookingId
+ */
+export const updateHomeServiceSerialBooking = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { hospitalId, bookingId } = req.params;
+    const booking = await findProviderHomeServiceSerialBooking(bookingId, { hospitalId });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const result = await applyHomeServiceSerialBookingFields(booking, req.body, {
+      cancelledBy: 'hospital'
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+
+    const io = req.app.get('io');
+    try {
+      await createAndSendNotification(
+        io,
+        booking.patientId,
+        'home_service_serial_update',
+        'Home Service Serial Updated',
+        `Your home service booking #${booking.serialNumber} has been updated`,
+        booking._id,
+        'home_service_booking'
+      );
+    } catch (notifError) {
+      console.error('Failed to send patient notification:', notifError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Serial booking updated successfully',
+      data: { booking: result.booking }
+    });
+  } catch (error) {
+    console.error('Update home service serial booking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update serial booking',
       error: error.message
     });
   }

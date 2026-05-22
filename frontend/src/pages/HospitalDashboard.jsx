@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import Navbar from '../components/Navbar';
+import HomeServiceDetailsModal from '../components/HomeServiceDetailsModal';
+import HomeServiceSerialUpdateModal from '../components/HomeServiceSerialUpdateModal';
 import {
   canAccess,
   canAccessTab,
@@ -937,6 +939,7 @@ const HomeServicesTab = ({ hospitalId, services, onRefresh, setSuccess, setError
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSerialModal, setShowSerialModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
   const [serviceToDelete, setServiceToDelete] = useState(null);
   const [formData, setFormData] = useState({
@@ -1211,6 +1214,13 @@ const HomeServicesTab = ({ hospitalId, services, onRefresh, setSuccess, setError
                 <h3>{service.serviceType}</h3>
                 <div className="service-actions">
                   <button
+                    onClick={() => { setSelectedService(service); setShowDetailsModal(true); }}
+                    className="action-btn"
+                    title="View Details"
+                  >
+                    View
+                  </button>
+                  <button
                     onClick={() => { setSelectedService(service); setShowSerialModal(true); }}
                     className="action-btn"
                     title="Serial Settings"
@@ -1241,6 +1251,16 @@ const HomeServicesTab = ({ hospitalId, services, onRefresh, setSuccess, setError
           ))
         )}
       </div>
+
+      {showDetailsModal && selectedService && (
+        <HomeServiceDetailsModal
+          serviceId={selectedService._id}
+          mode="hospital"
+          providerId={hospitalId}
+          initialService={selectedService}
+          onClose={() => { setShowDetailsModal(false); setSelectedService(null); }}
+        />
+      )}
 
       {showSerialModal && selectedService && (
         <HomeServiceSerialSettingsModal
@@ -1441,6 +1461,7 @@ const HomeServiceSerialSettingsModal = ({ hospitalId, service, onClose, setSucce
 const HomeServiceSerialBookingsTab = ({ hospitalId, bookings, onRefresh, setSuccess, setError }) => {
   const [filterDate, setFilterDate] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [updateBooking, setUpdateBooking] = useState(null);
 
   const handleStatusUpdate = async (bookingId, status) => {
     try {
@@ -1510,21 +1531,44 @@ const HomeServiceSerialBookingsTab = ({ hospitalId, bookings, onRefresh, setSucc
                   <p><strong>Address:</strong> {booking.homeAddress.street}, {booking.homeAddress.city}</p>
                 )}
               </div>
-              {booking.status === 'pending' && (
-                <div className="request-actions">
-                  <button onClick={() => handleStatusUpdate(booking._id, 'confirmed')} className="accept-btn">Confirm</button>
-                  <button onClick={() => handleStatusUpdate(booking._id, 'cancelled')} className="reject-btn">Cancel</button>
-                </div>
-              )}
-              {booking.status === 'confirmed' && (
-                <div className="request-actions">
+              <div className="request-actions">
+                <button
+                  type="button"
+                  onClick={() => setUpdateBooking(booking)}
+                  className="action-btn"
+                  style={{ marginRight: '0.5rem' }}
+                >
+                  Update Serial
+                </button>
+                {booking.status === 'pending' && (
+                  <>
+                    <button onClick={() => handleStatusUpdate(booking._id, 'confirmed')} className="accept-btn">Confirm</button>
+                    <button onClick={() => handleStatusUpdate(booking._id, 'cancelled')} className="reject-btn">Cancel</button>
+                  </>
+                )}
+                {booking.status === 'confirmed' && (
                   <button onClick={() => handleStatusUpdate(booking._id, 'completed')} className="accept-btn">Complete</button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ))
         )}
       </div>
+
+      {updateBooking && (
+        <HomeServiceSerialUpdateModal
+          booking={updateBooking}
+          mode="hospital"
+          providerId={hospitalId}
+          onClose={() => setUpdateBooking(null)}
+          onSuccess={() => {
+            setSuccess('Serial booking updated successfully');
+            onRefresh();
+            setTimeout(() => setSuccess(''), 3000);
+          }}
+          setError={setError}
+        />
+      )}
     </div>
   );
 };

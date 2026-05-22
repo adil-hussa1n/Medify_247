@@ -5,9 +5,18 @@ import Test from '../models/Test.model.js';
 import Order from '../models/Order.model.js';
 import HomeService from '../models/HomeService.model.js';
 import HomeServiceRequest from '../models/HomeServiceRequest.model.js';
+import DiagnosticCenterStaff from '../models/DiagnosticCenterStaff.model.js';
+import { getPermissionsForRole } from '../constants/diagnosticCenterPermissions.js';
 import TestSerialSettings from '../models/TestSerialSettings.model.js';
 import TestSerialBooking from '../models/TestSerialBooking.model.js';
+import HomeServiceSerialSettings from '../models/HomeServiceSerialSettings.model.js';
+import HomeServiceSerialBooking from '../models/HomeServiceSerialBooking.model.js';
 import SerialSettings from '../models/SerialSettings.model.js';
+import { offDaysToAvailableDays, buildSerialBookingSummary } from '../utils/homeServiceSerial.util.js';
+import {
+  findProviderHomeServiceSerialBooking,
+  applyHomeServiceSerialBookingFields
+} from '../services/homeServiceSerialBooking.service.js';
 import Appointment from '../models/Appointment.model.js';
 import { logApproval, notifyEmail } from './doctor.controller.js';
 import { validationResult } from 'express-validator';
@@ -87,6 +96,14 @@ export const registerDiagnosticCenter = async (req, res) => {
       tradeLicenseDocument: tradeLicenseDocument || '',
       status: 'pending_super_admin',
       admins: [user._id] // Add creator as admin
+    });
+
+    await DiagnosticCenterStaff.create({
+      diagnosticCenterId: diagnosticCenter._id,
+      userId: user._id,
+      role: 'owner',
+      permissions: getPermissionsForRole('owner'),
+      isActive: true
     });
 
     // Log registration event
@@ -1056,9 +1073,16 @@ export const getHomeService = async (req, res) => {
       });
     }
 
+    const serialSettings = await HomeServiceSerialSettings.findOne({
+      homeServiceId: serviceId,
+      diagnosticCenterId: centerId
+    });
+    const homeServiceObj = homeService.toObject();
+    homeServiceObj.serialBooking = buildSerialBookingSummary(serialSettings, homeService);
+
     res.json({
       success: true,
-      data: { homeService }
+      data: { homeService: homeServiceObj }
     });
   } catch (error) {
     console.error('Get home service error:', error);
@@ -1783,6 +1807,428 @@ export const getTestSerialBookings = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch test serial bookings',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/diagnostic-centers/:centerId/home-services/:serviceId/serial-settings
+ */
+export const createOrUpdateHomeServiceSerialSettings = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { centerId, serviceId } = req.params;
+    const { totalSerialsPerDay, serialTimeRange, servicePrice, availableDays, isActive } = req.body;
+
+    const diagnosticCenter = await DiagnosticCenter.findById(centerId);
+    if (!diagnosticCenter) {
+      return res.status(404).json({ success: false, message: 'Diagnostic center not found' });
+    }
+    if (diagnosticCenter.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        message: 'Diagnostic center must be approved to manage home service serial settings'
+      });
+    }
+
+    const homeService = await HomeService.findById(serviceId);
+    if (!homeService) {
+      return res.status(404).json({ success: false, message: 'Home service not found' });
+    }
+    if (homeService.diagnosticCenterId?.toString() !== centerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Home service does not belong to this diagnostic center'
+      });
+    }
+
+    if (serialTimeRange) {
+      const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+      if (serialTimeRange.startTime && !timeRegex.test(serialTimeRange.startTime)) {
+        return res.status(400).json({ success: false, message: 'Start time must be in HH:mm format' });
+      }
+      if (serialTimeRange.endTime && !timeRegex.test(serialTimeRange.endTime)) {
+        return res.status(400).json({ success: false, message: 'End time must be in HH:mm format' });
+      }
+      if (serialTimeRange.startTime && serialTimeRange.endTime) {
+        const [startHour, startMin] = serialTimeRange.startTime.split(':').map(Number);
+        const [endHour, endMin] = serialTimeRange.endTime.split(':').map(Number);
+        if (endHour * 60 + endMin <= startHour * 60 + startMin) {
+          return res.status(400).json({ success: false, message: 'End time must be after start time' });
+        }
+      }
+    }
+
+    let serialSettings = await HomeServiceSerialSettings.findOne({
+      homeServiceId: serviceId,
+      diagnosticCenterId: centerId
+    });
+
+    const defaultAvailableDays = availableDays ?? offDaysToAvailableDays(homeService.offDays);
+    const defaultTimeRange = serialTimeRange || homeService.availableTime || { startTime: '09:00', endTime: '17:00' };
+
+    if (serialSettings) {
+      if (totalSerialsPerDay !== undefined) serialSettings.totalSerialsPerDay = totalSerialsPerDay;
+      if (serialTimeRange !== undefined) serialSettings.serialTimeRange = serialTimeRange;
+      if (servicePrice !== undefined) serialSettings.servicePrice = servicePrice;
+      if (availableDays !== undefined) serialSettings.availableDays = availableDays;
+      if (isActive !== undefined) serialSettings.isActive = isActive;
+      await serialSettings.save();
+    } else {
+      serialSettings = await HomeServiceSerialSettings.create({
+        homeServiceId: serviceId,
+        diagnosticCenterId: centerId,
+        totalSerialsPerDay: totalSerialsPerDay || 20,
+        serialTimeRange: defaultTimeRange,
+        servicePrice: servicePrice !== undefined ? servicePrice : homeService.price,
+        availableDays: defaultAvailableDays,
+        isActive: isActive !== undefined ? isActive : true
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Home service serial settings saved successfully',
+      data: { serialSettings }
+    });
+  } catch (error) {
+    console.error('Create/update diagnostic home service serial settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save home service serial settings',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET /api/diagnostic-centers/:centerId/home-services/:serviceId/serial-settings
+ */
+export const getHomeServiceSerialSettings = async (req, res) => {
+  try {
+    const { centerId, serviceId } = req.params;
+
+    const serialSettings = await HomeServiceSerialSettings.findOne({
+      homeServiceId: serviceId,
+      diagnosticCenterId: centerId
+    })
+      .populate('homeServiceId', 'serviceType price note availableTime offDays')
+      .populate('diagnosticCenterId', 'name');
+
+    if (!serialSettings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Home service serial settings not found'
+      });
+    }
+
+    res.json({ success: true, data: { serialSettings } });
+  } catch (error) {
+    console.error('Get diagnostic home service serial settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch home service serial settings',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET /api/diagnostic-centers/:centerId/home-services/:serviceId/serial-stats
+ */
+export const getHomeServiceSerialStats = async (req, res) => {
+  try {
+    const { centerId, serviceId } = req.params;
+    const { date } = req.query;
+
+    const serialSettings = await HomeServiceSerialSettings.findOne({
+      homeServiceId: serviceId,
+      diagnosticCenterId: centerId
+    });
+
+    if (!serialSettings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Home service serial settings not found'
+      });
+    }
+
+    let dateQuery = {};
+    if (date) {
+      dateQuery = {
+        appointmentDate: {
+          $gte: moment(date).startOf('day').toDate(),
+          $lte: moment(date).endOf('day').toDate()
+        }
+      };
+    } else {
+      dateQuery = {
+        appointmentDate: {
+          $gte: moment().startOf('day').toDate(),
+          $lte: moment().endOf('day').toDate()
+        }
+      };
+    }
+
+    const bookedSerials = await HomeServiceSerialBooking.find({
+      homeServiceId: serviceId,
+      diagnosticCenterId: centerId,
+      ...dateQuery,
+      status: { $in: ['pending', 'confirmed'] }
+    }).populate('patientId', 'name email phone');
+
+    const evenNumberedSerials = Math.floor(serialSettings.totalSerialsPerDay / 2);
+    const bookedEvenSerials = bookedSerials.filter((b) => b.serialNumber % 2 === 0).length;
+
+    res.json({
+      success: true,
+      data: {
+        serialSettings: {
+          totalSerialsPerDay: serialSettings.totalSerialsPerDay,
+          evenNumberedSerialsAvailable: evenNumberedSerials,
+          servicePrice: serialSettings.servicePrice,
+          timeRange: serialSettings.serialTimeRange,
+          isActive: serialSettings.isActive
+        },
+        statistics: {
+          date: date || moment().format('YYYY-MM-DD'),
+          totalBooked: bookedSerials.length,
+          bookedEvenSerials,
+          availableEvenSerials: evenNumberedSerials - bookedEvenSerials,
+          bookings: bookedSerials.map((booking) => ({
+            bookingNumber: booking.bookingNumber,
+            serialNumber: booking.serialNumber,
+            patient: {
+              name: booking.patientName,
+              email: booking.patientEmail,
+              phone: booking.patientPhone
+            },
+            time: booking.timeSlot.startTime,
+            status: booking.status,
+            homeAddress: booking.homeAddress
+          }))
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get diagnostic home service serial stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch home service serial statistics',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET /api/diagnostic-centers/:centerId/home-service-serial-bookings
+ */
+export const getHomeServiceSerialBookings = async (req, res) => {
+  try {
+    const { centerId } = req.params;
+    const {
+      status,
+      date,
+      serviceId,
+      serviceType,
+      page = 1,
+      limit = 20,
+      sortBy = 'appointmentDate',
+      sortOrder = 'desc'
+    } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const diagnosticCenter = await DiagnosticCenter.findById(centerId);
+    if (!diagnosticCenter) {
+      return res.status(404).json({ success: false, message: 'Diagnostic center not found' });
+    }
+
+    const query = { diagnosticCenterId: centerId };
+    if (status) query.status = status;
+    if (serviceId) query.homeServiceId = serviceId;
+    if (serviceType) query.serviceType = new RegExp(serviceType, 'i');
+    if (date) {
+      query.appointmentDate = {
+        $gte: moment(date).startOf('day').toDate(),
+        $lte: moment(date).endOf('day').toDate()
+      };
+    }
+
+    const sort = {};
+    if (sortBy === 'date' || sortBy === 'appointmentDate') {
+      sort.appointmentDate = sortOrder === 'asc' ? 1 : -1;
+    } else if (sortBy === 'serialNumber') {
+      sort.serialNumber = sortOrder === 'asc' ? 1 : -1;
+    } else {
+      sort.appointmentDate = -1;
+      sort.serialNumber = 1;
+    }
+
+    const bookings = await HomeServiceSerialBooking.find(query)
+      .populate('homeServiceId', 'serviceType price note')
+      .populate('patientId', 'name email phone')
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await HomeServiceSerialBooking.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        bookings,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get diagnostic home service serial bookings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch home service serial bookings',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * PUT /api/diagnostic-centers/:centerId/home-service-serial-bookings/:bookingId/status
+ */
+export const updateHomeServiceSerialBookingStatus = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { centerId, bookingId } = req.params;
+    const { status, notes } = req.body;
+
+    const booking = await HomeServiceSerialBooking.findOne({
+      _id: bookingId,
+      diagnosticCenterId: centerId
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    booking.status = status;
+    if (notes !== undefined) booking.notes = notes;
+    if (status === 'completed') booking.completedAt = new Date();
+    if (status === 'cancelled') {
+      booking.cancelledAt = new Date();
+      booking.cancelledBy = 'diagnostic_center';
+    }
+
+    await booking.save();
+
+    const io = req.app.get('io');
+    try {
+      await createAndSendNotification(
+        io,
+        booking.patientId,
+        'home_service_serial_update',
+        'Home Service Serial Updated',
+        `Your home service serial #${booking.serialNumber} is now ${status}`,
+        booking._id,
+        'home_service_booking'
+      );
+    } catch (notifError) {
+      console.error('Failed to send patient notification:', notifError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Booking status updated successfully',
+      data: { booking }
+    });
+  } catch (error) {
+    console.error('Update diagnostic home service serial booking status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update booking status',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * PUT /api/diagnostic-centers/:centerId/home-service-serial-bookings/:bookingId
+ */
+export const updateHomeServiceSerialBooking = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { centerId, bookingId } = req.params;
+    const booking = await findProviderHomeServiceSerialBooking(bookingId, {
+      diagnosticCenterId: centerId
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const result = await applyHomeServiceSerialBookingFields(booking, req.body, {
+      cancelledBy: 'diagnostic_center'
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+
+    const io = req.app.get('io');
+    try {
+      await createAndSendNotification(
+        io,
+        booking.patientId,
+        'home_service_serial_update',
+        'Home Service Serial Updated',
+        `Your home service booking #${booking.serialNumber} has been updated`,
+        booking._id,
+        'home_service_booking'
+      );
+    } catch (notifError) {
+      console.error('Failed to send patient notification:', notifError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Serial booking updated successfully',
+      data: { booking: result.booking }
+    });
+  } catch (error) {
+    console.error('Update diagnostic home service serial booking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update serial booking',
       error: error.message
     });
   }

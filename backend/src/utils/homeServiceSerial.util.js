@@ -64,3 +64,25 @@ export const offDaysToAvailableDays = (offDays = []) => {
   const allDays = [0, 1, 2, 3, 4, 5, 6];
   return allDays.filter((d) => !offDays.includes(d));
 };
+
+/** Summary for home service details / patient API. */
+export const buildSerialBookingSummary = (serialSettings, homeService = null) => {
+  if (!serialSettings) return null;
+
+  let availableDays = serialSettings.availableDays;
+  if (!availableDays?.length) {
+    availableDays = offDaysToAvailableDays(homeService?.offDays || []);
+  }
+  if (!availableDays?.length) {
+    availableDays = [0, 1, 2, 3, 4, 5, 6];
+  }
+
+  return {
+    enabled: Boolean(serialSettings.isActive),
+    totalSerialsPerDay: serialSettings.totalSerialsPerDay,
+    evenSerialsPerDay: Math.floor(serialSettings.totalSerialsPerDay / 2),
+    serialTimeRange: serialSettings.serialTimeRange,
+    servicePrice: serialSettings.servicePrice,
+    availableDays: [...availableDays].sort((a, b) => a - b)
+  };
+};

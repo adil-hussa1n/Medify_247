@@ -1,9 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import Navbar from '../components/Navbar';
+import HomeServiceDetailsModal from '../components/HomeServiceDetailsModal';
+import HomeServiceSerialUpdateModal from '../components/HomeServiceSerialUpdateModal';
+import {
+  canAccess,
+  canAccessTab,
+  ROLE_OPTIONS,
+  DC_PERMISSIONS
+} from '../utils/diagnosticCenterPermissions';
 import './DiagnosticCenterDashboard.css';
+
+const DASHBOARD_TABS = [
+  { key: 'overview', label: 'Overview', icon: 'overview' },
+  { key: 'tests', label: 'Tests', icon: 'tests' },
+  { key: 'orders', label: 'Orders', icon: 'orders' },
+  { key: 'home-services', label: 'Home Services', icon: 'home' },
+  { key: 'requests', label: 'Service Requests', icon: 'requests' },
+  { key: 'home-serial-bookings', label: 'Serial Bookings', icon: 'serials' },
+  { key: 'doctors', label: 'Doctors', icon: 'doctors' },
+  { key: 'staff', label: 'Team & Access', icon: 'staff' }
+];
 
 const DiagnosticCenterDashboard = () => {
   const { user } = useAuth();
@@ -15,10 +35,14 @@ const DiagnosticCenterDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [homeServices, setHomeServices] = useState([]);
   const [homeServiceRequests, setHomeServiceRequests] = useState([]);
+  const [homeServiceSerialBookings, setHomeServiceSerialBookings] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [permissions, setPermissions] = useState([]);
+  const [membership, setMembership] = useState(null);
+  const [staffMembers, setStaffMembers] = useState([]);
 
   useEffect(() => {
     if (!user || user.role !== 'diagnostic_center_admin') {
@@ -30,7 +54,7 @@ const DiagnosticCenterDashboard = () => {
 
   useEffect(() => {
     if (centerId) {
-      // Only fetch dashboard data if it's not already loaded
+      fetchCenterAccess();
       if (!dashboardData) {
         fetchDashboardData();
       }
@@ -38,9 +62,23 @@ const DiagnosticCenterDashboard = () => {
       if (activeTab === 'orders') fetchOrders();
       if (activeTab === 'home-services') fetchHomeServices();
       if (activeTab === 'requests') fetchHomeServiceRequests();
+      if (activeTab === 'home-serial-bookings') fetchHomeServiceSerialBookings();
       if (activeTab === 'doctors') fetchDoctors();
+      if (activeTab === 'staff') fetchStaffMembers();
     }
   }, [centerId, activeTab]);
+
+  const visibleTabs = useMemo(
+    () => DASHBOARD_TABS.filter((tab) => canAccessTab(permissions, tab.key)),
+    [permissions]
+  );
+
+  useEffect(() => {
+    if (!permissions.length || !visibleTabs.length) return;
+    if (!canAccessTab(permissions, activeTab)) {
+      setActiveTab(visibleTabs[0].key);
+    }
+  }, [permissions, visibleTabs, activeTab]);
 
   const fetchCenterId = async () => {
     try {
@@ -53,7 +91,12 @@ const DiagnosticCenterDashboard = () => {
         const id = userResponse.data.data.roleData._id;
         console.log('Center ID:', id);
         setCenterId(id);
-        
+        const access = userResponse.data.data.diagnosticCenterAccess;
+        if (access?.permissions) {
+          setPermissions(access.permissions);
+          setMembership(access);
+        }
+
         // Fetch dashboard data immediately after getting centerId
         try {
           const dashboardResponse = await api.get(`/diagnostic-centers/${id}/dashboard`);
@@ -96,6 +139,33 @@ const DiagnosticCenterDashboard = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCenterAccess = async () => {
+    if (!centerId) return;
+    try {
+      const response = await api.get(`/diagnostic-centers/${centerId}/access`);
+      if (response.data.success) {
+        setPermissions(response.data.data.permissions || []);
+        setMembership(response.data.data.membership);
+      }
+    } catch (err) {
+      console.error('Error fetching center access:', err);
+    }
+  };
+
+  const fetchStaffMembers = async () => {
+    try {
+      const response = await api.get(`/diagnostic-centers/${centerId}/staff`);
+      if (response.data.success) {
+        setStaffMembers(response.data.data.staff || []);
+      }
+    } catch (err) {
+      console.error('Error fetching staff:', err);
+      if (err.response?.status === 403) {
+        setError('You do not have permission to view team members.');
+      }
     }
   };
 
@@ -154,6 +224,17 @@ const DiagnosticCenterDashboard = () => {
     }
   };
 
+  const fetchHomeServiceSerialBookings = async () => {
+    try {
+      const response = await api.get(`/diagnostic-centers/${centerId}/home-service-serial-bookings`);
+      if (response.data.success) {
+        setHomeServiceSerialBookings(response.data.data.bookings || []);
+      }
+    } catch (err) {
+      console.error('Error fetching home service serial bookings:', err);
+    }
+  };
+
   const fetchHomeServiceRequests = async () => {
     try {
       const response = await api.get(`/diagnostic-centers/${centerId}/home-service-requests`);
@@ -199,7 +280,12 @@ const DiagnosticCenterDashboard = () => {
         <div className="dashboard-header">
           <div>
             <h1 className="dashboard-title">Diagnostic Center Dashboard</h1>
-            <p className="dashboard-subtitle">Welcome back, {diagnosticCenter?.name || 'Admin'}</p>
+            <p className="dashboard-subtitle">
+              Welcome back, {diagnosticCenter?.name || 'Admin'}
+              {membership?.roleLabel && (
+                <span className="role-badge"> · {membership.roleLabel}</span>
+              )}
+            </p>
           </div>
         </div>
 
@@ -222,60 +308,17 @@ const DiagnosticCenterDashboard = () => {
         )}
 
         <div className="dashboard-tabs">
-          <button 
-            className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
-            </svg>
-            Overview
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'tests' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tests')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
-            Tests
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'orders' ? 'active' : ''}`}
-            onClick={() => setActiveTab('orders')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
-            </svg>
-            Orders
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'home-services' ? 'active' : ''}`}
-            onClick={() => setActiveTab('home-services')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-            </svg>
-            Home Services
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'requests' ? 'active' : ''}`}
-            onClick={() => setActiveTab('requests')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-            Service Requests
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'doctors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('doctors')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-            </svg>
-            Doctors
-          </button>
+          {visibleTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`tab-button ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <TabIcon type={tab.icon} />
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         <div className="tab-content">
@@ -322,11 +365,31 @@ const DiagnosticCenterDashboard = () => {
               setError={setError}
             />
           )}
+          {activeTab === 'home-serial-bookings' && (
+            <DiagnosticHomeServiceSerialBookingsTab
+              centerId={centerId}
+              bookings={homeServiceSerialBookings}
+              onRefresh={fetchHomeServiceSerialBookings}
+              setSuccess={setSuccess}
+              setError={setError}
+            />
+          )}
           {activeTab === 'doctors' && (
             <DoctorsTab 
               centerId={centerId}
               doctors={doctors}
               onRefresh={fetchDoctors}
+              setSuccess={setSuccess}
+              setError={setError}
+            />
+          )}
+          {activeTab === 'staff' && (
+            <DiagnosticCenterStaffTab
+              centerId={centerId}
+              staff={staffMembers}
+              membership={membership}
+              canManage={canAccess(permissions, 'staff:manage')}
+              onRefresh={fetchStaffMembers}
               setSuccess={setSuccess}
               setError={setError}
             />
@@ -1356,6 +1419,8 @@ const HomeServicesTab = ({ centerId, services, onRefresh, setSuccess, setError }
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showSerialModal, setShowSerialModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
   const [serviceToDelete, setServiceToDelete] = useState(null);
   const [formData, setFormData] = useState({
@@ -1629,6 +1694,20 @@ const HomeServicesTab = ({ centerId, services, onRefresh, setSuccess, setError }
               <div className="service-card-header">
                 <h3>{service.serviceType}</h3>
                 <div className="service-actions">
+                  <button
+                    onClick={() => { setSelectedService(service); setShowDetailsModal(true); }}
+                    className="action-btn"
+                    title="View Details"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => { setSelectedService(service); setShowSerialModal(true); }}
+                    className="action-btn"
+                    title="Serial Settings"
+                  >
+                    Serial
+                  </button>
                   <button onClick={() => handleEdit(service)} className="action-btn edit-btn" title="Edit">
                     <svg viewBox="0 0 20 20" fill="currentColor" style={{ width: '14px', height: '14px' }}>
                       <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
@@ -1653,6 +1732,324 @@ const HomeServicesTab = ({ centerId, services, onRefresh, setSuccess, setError }
           ))
         )}
       </div>
+
+      {showDetailsModal && selectedService && (
+        <HomeServiceDetailsModal
+          serviceId={selectedService._id}
+          mode="diagnostic"
+          providerId={centerId}
+          initialService={selectedService}
+          onClose={() => { setShowDetailsModal(false); setSelectedService(null); }}
+        />
+      )}
+
+      {showSerialModal && selectedService && (
+        <DiagnosticHomeServiceSerialSettingsModal
+          centerId={centerId}
+          service={selectedService}
+          onClose={() => { setShowSerialModal(false); setSelectedService(null); }}
+          setSuccess={setSuccess}
+          setError={setError}
+        />
+      )}
+    </div>
+  );
+};
+
+const DiagnosticHomeServiceSerialSettingsModal = ({ centerId, service, onClose, setSuccess, setError }) => {
+  const [formData, setFormData] = useState({
+    totalSerialsPerDay: 20,
+    startTime: service.availableTime?.startTime || '09:00',
+    endTime: service.availableTime?.endTime || '17:00',
+    servicePrice: service.price || 0,
+    isActive: true
+  });
+  const [statsDate, setStatsDate] = useState(new Date().toISOString().split('T')[0]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    loadSettings();
+  }, [service._id]);
+
+  useEffect(() => {
+    if (formData.totalSerialsPerDay) loadStats();
+  }, [statsDate, service._id]);
+
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get(`/diagnostic-centers/${centerId}/home-services/${service._id}/serial-settings`);
+      if (response.data.success) {
+        const s = response.data.data.serialSettings;
+        setFormData({
+          totalSerialsPerDay: s.totalSerialsPerDay,
+          startTime: s.serialTimeRange?.startTime || '09:00',
+          endTime: s.serialTimeRange?.endTime || '17:00',
+          servicePrice: s.servicePrice,
+          isActive: s.isActive
+        });
+      }
+    } catch (err) {
+      if (err.response?.status !== 404) {
+        setError(err.response?.data?.message || 'Failed to load serial settings');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      const response = await api.get(
+        `/diagnostic-centers/${centerId}/home-services/${service._id}/serial-stats?date=${statsDate}`
+      );
+      if (response.data.success) setStats(response.data.data);
+    } catch (err) {
+      if (err.response?.status !== 404) console.error(err);
+    }
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const response = await api.post(`/diagnostic-centers/${centerId}/home-services/${service._id}/serial-settings`, {
+        totalSerialsPerDay: parseInt(formData.totalSerialsPerDay, 10),
+        serialTimeRange: { startTime: formData.startTime, endTime: formData.endTime },
+        servicePrice: parseFloat(formData.servicePrice),
+        isActive: formData.isActive
+      });
+      if (response.data.success) {
+        setSuccess('Serial settings saved successfully!');
+        loadStats();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save serial settings');
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+        <div className="modal-header">
+          <h2>Serial Settings — {service.serviceType}</h2>
+          <button className="close-button" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          {loading ? (
+            <p>Loading settings...</p>
+          ) : (
+            <>
+              <form onSubmit={handleSave}>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>Total Serials Per Day *</label>
+                    <input
+                      type="number"
+                      min="2"
+                      step="2"
+                      value={formData.totalSerialsPerDay}
+                      onChange={(e) => setFormData({ ...formData, totalSerialsPerDay: e.target.value })}
+                      required
+                    />
+                    <small>Only even serials (2, 4, 6…) are bookable online</small>
+                  </div>
+                  <div className="form-group">
+                    <label>Service Price (tk) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.servicePrice}
+                      onChange={(e) => setFormData({ ...formData, servicePrice: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Start Time *</label>
+                    <input
+                      type="time"
+                      value={formData.startTime}
+                      onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>End Time *</label>
+                    <input
+                      type="time"
+                      value={formData.endTime}
+                      onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Status</label>
+                    <select
+                      value={formData.isActive ? 'active' : 'inactive'}
+                      onChange={(e) => setFormData({ ...formData, isActive: e.target.value === 'active' })}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button type="button" onClick={onClose}>Cancel</button>
+                  <button type="submit" disabled={submitting}>
+                    {submitting ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </form>
+
+              <div style={{ marginTop: '1.5rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+                <h3>Serial Stats</h3>
+                <div className="form-group">
+                  <label>Date</label>
+                  <input type="date" value={statsDate} onChange={(e) => setStatsDate(e.target.value)} />
+                </div>
+                {stats ? (
+                  <div className="serial-stats-summary">
+                    <p>Booked: {stats.statistics?.bookedEvenSerials ?? 0} / Available online: {stats.statistics?.availableEvenSerials ?? 0}</p>
+                    {stats.statistics?.bookings?.length > 0 && (
+                      <ul>
+                        {stats.statistics.bookings.map((b) => (
+                          <li key={b.bookingNumber}>
+                            Serial #{b.serialNumber} — {b.patient?.name} at {b.time} ({b.status})
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : (
+                  <p>Save settings first to view stats.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DiagnosticHomeServiceSerialBookingsTab = ({ centerId, bookings, onRefresh, setSuccess, setError }) => {
+  const [filterDate, setFilterDate] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [updateBooking, setUpdateBooking] = useState(null);
+
+  const handleStatusUpdate = async (bookingId, status) => {
+    try {
+      const response = await api.put(
+        `/diagnostic-centers/${centerId}/home-service-serial-bookings/${bookingId}/status`,
+        { status }
+      );
+      if (response.data.success) {
+        setSuccess(`Booking marked as ${status}`);
+        onRefresh();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update status');
+      setTimeout(() => setError(''), 5000);
+    }
+  };
+
+  const filtered = bookings.filter((b) => {
+    if (filterStatus && b.status !== filterStatus) return false;
+    if (filterDate) {
+      const d = new Date(b.appointmentDate).toISOString().split('T')[0];
+      if (d !== filterDate) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="tab-panel">
+      <div className="panel-header">
+        <h2>Home Service Serial Bookings</h2>
+        <button onClick={onRefresh} className="add-button">Refresh</button>
+      </div>
+      <div className="form-grid" style={{ marginBottom: '1rem' }}>
+        <div className="form-group">
+          <label>Filter by date</label>
+          <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label>Filter by status</label>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">All</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+      </div>
+      <div className="requests-list">
+        {filtered.length === 0 ? (
+          <div className="empty-state"><p>No serial bookings found.</p></div>
+        ) : (
+          filtered.map((booking) => (
+            <div key={booking._id} className="request-card">
+              <div className="request-header">
+                <h3>{booking.bookingNumber} — Serial #{booking.serialNumber}</h3>
+                <span className={`status-badge ${booking.status}`}>{booking.status}</span>
+              </div>
+              <div className="request-details">
+                <p><strong>Service:</strong> {booking.serviceType || booking.homeServiceId?.serviceType}</p>
+                <p><strong>Patient:</strong> {booking.patientName} ({booking.patientPhone})</p>
+                <p><strong>Date:</strong> {new Date(booking.appointmentDate).toLocaleDateString()}</p>
+                <p><strong>Time:</strong> {booking.timeSlot?.startTime} - {booking.timeSlot?.endTime}</p>
+                <p><strong>Price:</strong> {booking.servicePrice} tk</p>
+                {booking.homeAddress && (
+                  <p><strong>Address:</strong> {booking.homeAddress.street}, {booking.homeAddress.city}</p>
+                )}
+              </div>
+              <div className="request-actions">
+                <button
+                  type="button"
+                  onClick={() => setUpdateBooking(booking)}
+                  className="action-btn"
+                  style={{ marginRight: '0.5rem' }}
+                >
+                  Update Serial
+                </button>
+                {booking.status === 'pending' && (
+                  <>
+                    <button onClick={() => handleStatusUpdate(booking._id, 'confirmed')} className="accept-btn">Confirm</button>
+                    <button onClick={() => handleStatusUpdate(booking._id, 'cancelled')} className="reject-btn">Cancel</button>
+                  </>
+                )}
+                {booking.status === 'confirmed' && (
+                  <button onClick={() => handleStatusUpdate(booking._id, 'completed')} className="accept-btn">Mark Completed</button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {updateBooking && (
+        <HomeServiceSerialUpdateModal
+          booking={updateBooking}
+          mode="diagnostic"
+          providerId={centerId}
+          onClose={() => setUpdateBooking(null)}
+          onSuccess={() => {
+            setSuccess('Serial booking updated successfully');
+            onRefresh();
+            setTimeout(() => setSuccess(''), 3000);
+          }}
+          setError={setError}
+        />
+      )}
     </div>
   );
 };
@@ -2434,6 +2831,416 @@ const DoctorsTab = ({ centerId, doctors, onRefresh, setSuccess, setError }) => {
           </table>
         )}
       </div>
+    </div>
+  );
+};
+
+const TabIcon = ({ type }) => {
+  if (type === 'staff') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v1h8v-1zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-1a5 5 0 00-5-5H9a5 5 0 00-5 5v1h12z" />
+      </svg>
+    );
+  }
+  if (type === 'doctors') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+      </svg>
+    );
+  }
+  if (type === 'home') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+      </svg>
+    );
+  }
+  if (type === 'requests') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+      </svg>
+    );
+  }
+  if (type === 'tests') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+      </svg>
+    );
+  }
+  if (type === 'orders') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+    </svg>
+  );
+};
+
+const DiagnosticCenterStaffTab = ({
+  centerId,
+  staff,
+  membership,
+  canManage,
+  onRefresh,
+  setSuccess,
+  setError
+}) => {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    role: 'receptionist',
+    jobTitle: '',
+    permissions: []
+  });
+
+  const permissionGroups = useMemo(() => {
+    const groups = {};
+    DC_PERMISSIONS.forEach((p) => {
+      if (!groups[p.group]) groups[p.group] = [];
+      groups[p.group].push(p);
+    });
+    return groups;
+  }, []);
+
+  const resetForm = () => {
+    setForm({
+      name: '',
+      email: '',
+      phone: '',
+      password: '',
+      role: 'receptionist',
+      jobTitle: '',
+      permissions: []
+    });
+    setEditing(null);
+    setShowForm(false);
+  };
+
+  const openAddForm = () => {
+    setEditing(null);
+    setForm({
+      name: '',
+      email: '',
+      phone: '',
+      password: '',
+      role: 'receptionist',
+      jobTitle: '',
+      permissions: []
+    });
+    setShowForm(true);
+  };
+
+  const openEdit = (member) => {
+    setEditing(member);
+    setForm({
+      name: member.name,
+      email: member.email,
+      phone: member.phone,
+      password: '',
+      role: member.role,
+      jobTitle: member.jobTitle || '',
+      permissions: member.permissions || []
+    });
+    setShowForm(true);
+  };
+
+  useEffect(() => {
+    if (!showForm) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') resetForm();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showForm]);
+
+  const togglePermission = (key) => {
+    setForm((prev) => ({
+      ...prev,
+      permissions: prev.permissions.includes(key)
+        ? prev.permissions.filter((p) => p !== key)
+        : [...prev.permissions, key]
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const payload = editing
+        ? {
+            role: form.role,
+            jobTitle: form.jobTitle,
+            permissions: form.role === 'custom' ? form.permissions : undefined
+          }
+        : {
+            name: form.name,
+            email: form.email,
+            phone: form.phone,
+            password: form.password,
+            role: form.role,
+            jobTitle: form.jobTitle,
+            permissions: form.role === 'custom' ? form.permissions : undefined
+          };
+
+      const response = editing
+        ? await api.put(`/diagnostic-centers/${centerId}/staff/${editing._id}`, payload)
+        : await api.post(`/diagnostic-centers/${centerId}/staff`, payload);
+
+      if (response.data.success) {
+        setSuccess(editing ? 'Staff member updated' : 'Staff member added');
+        resetForm();
+        onRefresh();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save staff member');
+      setTimeout(() => setError(''), 4000);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleActive = async (member) => {
+    try {
+      const response = await api.put(`/diagnostic-centers/${centerId}/staff/${member._id}`, {
+        isActive: !member.isActive
+      });
+      if (response.data.success) {
+        setSuccess(member.isActive ? 'Staff member deactivated' : 'Staff member activated');
+        onRefresh();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update status');
+      setTimeout(() => setError(''), 4000);
+    }
+  };
+
+  const handleRemove = async (member) => {
+    if (!window.confirm(`Remove ${member.name} from the diagnostic center team?`)) return;
+    try {
+      const response = await api.delete(`/diagnostic-centers/${centerId}/staff/${member._id}`);
+      if (response.data.success) {
+        setSuccess('Staff member removed');
+        onRefresh();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to remove staff');
+      setTimeout(() => setError(''), 4000);
+    }
+  };
+
+  return (
+    <div className="staff-tab">
+      <div className="home-services-header">
+        <div>
+          <h2>Team & Access Control</h2>
+          <p className="staff-tab-desc">
+            Add diagnostic center staff and assign roles with specific permissions.
+            {membership?.roleLabel && ` Your role: ${membership.roleLabel}.`}
+          </p>
+        </div>
+        {canManage && (
+          <button type="button" className="btn-primary" onClick={openAddForm}>
+            + Add Team Member
+          </button>
+        )}
+      </div>
+
+      <div className="staff-table-wrap">
+        <table className="staff-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Job title</th>
+              <th>Status</th>
+              {canManage && <th>Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {staff.length === 0 ? (
+              <tr>
+                <td colSpan={canManage ? 6 : 5} className="empty-cell">No team members yet.</td>
+              </tr>
+            ) : (
+              staff.map((member) => (
+                <tr key={member._id} className={!member.isActive ? 'inactive-row' : ''}>
+                  <td>
+                    {member.name}
+                    {member.isOwner && <span className="owner-tag">Owner</span>}
+                  </td>
+                  <td>{member.email}</td>
+                  <td>{member.roleLabel}</td>
+                  <td>{member.jobTitle || '—'}</td>
+                  <td>
+                    <span className={`status-pill ${member.isActive ? 'active' : 'inactive'}`}>
+                      {member.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  {canManage && (
+                    <td className="staff-actions">
+                      {!member.isOwner && (
+                        <>
+                          <button type="button" className="btn-link" onClick={() => openEdit(member)}>Edit</button>
+                          <button type="button" className="btn-link" onClick={() => handleToggleActive(member)}>
+                            {member.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button type="button" className="btn-link danger" onClick={() => handleRemove(member)}>Remove</button>
+                        </>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showForm && canManage && createPortal(
+        <div className="modal-overlay staff-modal-overlay" onClick={resetForm} role="presentation">
+          <div
+            className="modal-content staff-modal-content"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dc-staff-modal-title"
+          >
+            <div className="modal-header">
+              <h2 id="dc-staff-modal-title">{editing ? 'Edit Team Member' : 'Add Team Member'}</h2>
+              <button type="button" className="close-button" onClick={resetForm} aria-label="Close">
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div className="modal-body">
+                {editing ? (
+                  <p className="staff-edit-user">
+                    Editing <strong>{editing.name}</strong> ({editing.email})
+                  </p>
+                ) : (
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label>Full name *</label>
+                      <input
+                        value={form.name}
+                        onChange={(e) => setForm({ ...form, name: e.target.value })}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Job title</label>
+                      <input
+                        value={form.jobTitle}
+                        onChange={(e) => setForm({ ...form, jobTitle: e.target.value })}
+                        placeholder="e.g. Lab technician"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Email *</label>
+                      <input
+                        type="email"
+                        value={form.email}
+                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Phone *</label>
+                      <input
+                        value={form.phone}
+                        onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Password *</label>
+                      <input
+                        type="password"
+                        value={form.password}
+                        onChange={(e) => setForm({ ...form, password: e.target.value })}
+                        minLength={8}
+                        required
+                      />
+                      <small>Minimum 8 characters</small>
+                    </div>
+                  </div>
+                )}
+                {editing && (
+                  <div className="form-group">
+                    <label>Job title</label>
+                    <input
+                      value={form.jobTitle}
+                      onChange={(e) => setForm({ ...form, jobTitle: e.target.value })}
+                      placeholder="e.g. Lab technician"
+                    />
+                  </div>
+                )}
+                <div className="form-group">
+                  <label>Role *</label>
+                  <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {form.role === 'custom' && (
+                  <div className="permissions-grid">
+                    <p className="permissions-hint">Select individual permissions:</p>
+                    {Object.entries(permissionGroups).map(([group, perms]) => (
+                      <div key={group} className="permission-group">
+                        <strong>{group}</strong>
+                        <div className="permission-checkboxes">
+                          {perms.map((p) => (
+                            <label key={p.key} className="permission-check">
+                              <input
+                                type="checkbox"
+                                checked={form.permissions.includes(p.key)}
+                                onChange={() => togglePermission(p.key)}
+                              />
+                              {p.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={resetForm}>Cancel</button>
+                <button type="submit" disabled={submitting}>
+                  {submitting ? 'Saving...' : editing ? 'Update' : 'Add member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
