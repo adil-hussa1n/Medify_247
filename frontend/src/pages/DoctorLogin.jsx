@@ -31,12 +31,11 @@ const DoctorLogin = () => {
       
       if (result.success) {
         // Check if user is a doctor
-        if (result.data?.user?.role === 'doctor') {
+        if (['doctor', 'doctor_staff'].includes(result.data?.user?.role)) {
           navigate('/doctor/dashboard');
         } else {
-          // Logout the user if they logged in with wrong account type
           logout();
-          setError('This account is not a doctor account. Please use the correct login.');
+          setError('This account is not a doctor practice account. Please use the correct login.');
         }
       } else {
         setError(result.message || 'Login failed. Please try again.');
@@ -65,7 +64,7 @@ const DoctorLogin = () => {
               </svg>
             </div>
             <h1>Doctor Login</h1>
-            <p>Sign in to manage your appointments</p>
+            <p>Sign in as the doctor or practice team member</p>
           </div>
 
           <form onSubmit={handleSubmit} className="doctor-login-form">

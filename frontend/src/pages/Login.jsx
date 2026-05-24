@@ -68,8 +68,20 @@ const Login = () => {
       console.log('Login result received:', result);
       
       if (result.success) {
-        console.log('Login successful! Navigating to home...');
-        navigate('/');
+        const role = result.data?.user?.role;
+        if (role === 'doctor' || role === 'doctor_staff') {
+          navigate('/doctor/dashboard');
+        } else if (role === 'hospital_admin') {
+          navigate('/hospital/dashboard');
+        } else if (role === 'diagnostic_center_admin') {
+          navigate('/diagnostic-center/dashboard');
+        } else if (role === 'super_admin') {
+          navigate('/super-admin/dashboard');
+        } else if (role === 'patient') {
+          navigate('/user/dashboard');
+        } else {
+          navigate('/');
+        }
       } else {
         console.error('Login failed:', result.message);
         setError(result.message || 'Login failed. Please try again.');

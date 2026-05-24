@@ -55,6 +55,11 @@ export const AuthProvider = ({ children }) => {
         
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(user));
+        if (response.data.data.doctorAccess) {
+          localStorage.setItem('doctorAccess', JSON.stringify(response.data.data.doctorAccess));
+        } else {
+          localStorage.removeItem('doctorAccess');
+        }
         setUser(user);
         
         console.log('💾 Token and user saved to localStorage');
@@ -114,6 +119,11 @@ export const AuthProvider = ({ children }) => {
         const { user, token } = response.data.data;
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(user));
+        if (response.data.data.doctorAccess) {
+          localStorage.setItem('doctorAccess', JSON.stringify(response.data.data.doctorAccess));
+        } else {
+          localStorage.removeItem('doctorAccess');
+        }
         setUser(user);
         return { success: true, data: response.data.data };
       }
@@ -168,6 +178,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('doctorAccess');
     setUser(null);
   };
 

@@ -50,8 +50,11 @@ const PrivateRoute = ({ children, requiredRole }) => {
     return <Navigate to="/login" />;
   }
   
-  if (requiredRole && user?.role !== requiredRole) {
-    return <Navigate to="/" />;
+  if (requiredRole) {
+    const allowed = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
+    if (!allowed.includes(user?.role)) {
+      return <Navigate to="/" />;
+    }
   }
   
   return children;
@@ -243,7 +246,7 @@ function App() {
           <Route 
             path="/doctor/dashboard" 
             element={
-              <PrivateRoute requiredRole="doctor">
+              <PrivateRoute requiredRole={['doctor', 'doctor_staff']}>
                 <DoctorDashboard />
               </PrivateRoute>
             } 

@@ -1,6 +1,16 @@
 import User from '../models/User.model.js';
 import Doctor from '../models/Doctor.model.js';
 import { generateToken } from '../utils/jwt.util.js';
+import {
+  DOCTOR_PERMISSIONS,
+  DOCTOR_ROLE_LABELS
+} from '../constants/doctorPermissions.js';
+import {
+  findDoctorForStaffUser,
+  getStaffMembershipForUser,
+  isIndividualDoctor,
+  resolveEffectivePermissions
+} from '../utils/doctorStaff.util.js';
 import { generateOTP, verifyOTP } from '../utils/otp.util.js';
 import { validationResult } from 'express-validator';
 
@@ -109,6 +119,16 @@ export const login = async (req, res) => {
       // Generate token using doctor._id
       const token = generateToken(doctor._id);
 
+      const doctorAccess = isIndividualDoctor(doctor)
+        ? {
+            doctorId: doctor._id,
+            role: 'owner',
+            roleLabel: DOCTOR_ROLE_LABELS.owner,
+            permissions: [...DOCTOR_PERMISSIONS],
+            isOwner: true
+          }
+        : null;
+
       res.json({
         success: true,
         message: 'Login successful',
@@ -127,6 +147,7 @@ export const login = async (req, res) => {
             specialization: doctor.specialization,
             status: doctor.status
           },
+          doctorAccess,
           token
         }
       });
@@ -164,9 +185,22 @@ export const login = async (req, res) => {
 
     // Get role-specific data
     let roleData = null;
+    let doctorAccess = null;
+
     if (user.role === 'doctor') {
-      // Legacy: if doctor exists in User table, find in Doctor table
       roleData = await Doctor.findOne({ userId: user._id });
+    } else if (user.role === 'doctor_staff') {
+      roleData = await findDoctorForStaffUser(user._id);
+      const membership = await getStaffMembershipForUser(user._id);
+      if (roleData && membership) {
+        doctorAccess = {
+          doctorId: roleData._id,
+          role: membership.role,
+          roleLabel: DOCTOR_ROLE_LABELS[membership.role],
+          permissions: resolveEffectivePermissions(membership),
+          isOwner: false
+        };
+      }
     }
 
     res.json({
@@ -182,6 +216,7 @@ export const login = async (req, res) => {
           profileImage: user.profileImage
         },
         roleData,
+        doctorAccess,
         token
       }
     });

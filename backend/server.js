@@ -12,6 +12,7 @@ import authRoutes from './src/routes/auth.routes.js';
 import patientRoutes from './src/routes/patient.routes.js';
 import doctorRoutes from './src/routes/doctor.routes.js'; // Doctor registration (public)
 import doctorPortalRoutes from './src/routes/doctor.portal.routes.js'; // Doctor portal (authenticated)
+import doctorPracticeRoutes from './src/routes/doctor.practice.routes.js'; // Doctor practice RBAC
 import hospitalRoutes from './src/routes/hospital.routes.js';
 import diagnosticCenterRoutes from './src/routes/diagnosticCenter.routes.js';
 import adminRoutes from './src/routes/admin.routes.js';
@@ -63,6 +64,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/patient', patientRoutes);
 app.use('/api/doctors', doctorRoutes); // Doctor registration endpoints (public)
 app.use('/api/doctor', doctorPortalRoutes); // Doctor portal endpoints (authenticated)
+app.use('/api/doctor-practice', doctorPracticeRoutes); // Doctor team & permissions
 app.use('/api/hospitals', hospitalRoutes); // Hospital registration and management
 app.use('/api/diagnostic-centers', diagnosticCenterRoutes); // Diagnostic center registration and management
 app.use('/api/admin', adminRoutes);

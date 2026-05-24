@@ -13,11 +13,13 @@ import { generateSerialListPDF } from '../utils/pdfGenerator.util.js';
 import moment from 'moment';
 import { validationResult } from 'express-validator';
 
+const practiceDoctorId = (req) => req.practiceDoctorId || req.user._id;
+
 // Get doctor profile
 export const getProfile = async (req, res) => {
   try {
     // Doctors are stored directly in doctors table, use req.user._id (which is doctor._id)
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     
     if (!doctor) {
       return res.status(404).json({
@@ -51,7 +53,7 @@ export const onboardDoctor = async (req, res) => {
     }
 
     // Check if doctor already exists
-    const existingDoctor = await Doctor.findById(req.user._id);
+    const existingDoctor = await Doctor.findById(practiceDoctorId(req));
     if (existingDoctor) {
       return res.status(400).json({
         success: false,
@@ -76,7 +78,7 @@ export const onboardDoctor = async (req, res) => {
     };
 
     const doctor = await Doctor.create({
-      userId: req.user._id,
+      userId: practiceDoctorId(req),
       bmdcNo,
       specialization,
       qualifications,
@@ -105,7 +107,7 @@ export const onboardDoctor = async (req, res) => {
 // Update profile (only allowed after approval)
 export const updateProfile = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     
     if (!doctor) {
       return res.status(404).json({
@@ -251,7 +253,7 @@ export const upsertSchedule = async (req, res) => {
       });
     }
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -311,7 +313,7 @@ export const upsertSchedule = async (req, res) => {
 // Get all schedules
 export const getSchedules = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -342,7 +344,7 @@ export const getAppointments = async (req, res) => {
     const { filter = 'all', page = 1, limit = 10 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -415,7 +417,7 @@ export const updateAppointmentStatus = async (req, res) => {
     const { appointmentId } = req.params;
     const { status, notes } = req.body;
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -514,7 +516,7 @@ export const createPrescription = async (req, res) => {
 
     const { appointmentId, vitals, diagnosis, medicines, tests, advice, followUpDate } = req.body;
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -611,7 +613,7 @@ export const getPatientHistory = async (req, res) => {
   try {
     const { patientId } = req.params;
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -646,7 +648,7 @@ export const getEarnings = async (req, res) => {
   try {
     const { month, year } = req.query;
     
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -698,7 +700,7 @@ export const generateSerialList = async (req, res) => {
   try {
     const { date } = req.query;
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -748,7 +750,7 @@ export const createOrUpdateMySerialSettings = async (req, res) => {
       });
     }
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -843,7 +845,7 @@ export const createOrUpdateMySerialSettings = async (req, res) => {
 // Get my serial settings
 export const getMySerialSettings = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -882,7 +884,7 @@ export const getMySerialSettings = async (req, res) => {
 // Get my serial statistics
 export const getMySerialStats = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -1000,7 +1002,7 @@ export const createOrUpdateMyDateSerialSettings = async (req, res) => {
       });
     }
 
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -1123,7 +1125,7 @@ export const createOrUpdateMyDateSerialSettings = async (req, res) => {
  */
 export const getMyDateSerialSettings = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.user._id);
+    const doctor = await Doctor.findById(practiceDoctorId(req));
     if (!doctor) {
       return res.status(404).json({
         success: false,

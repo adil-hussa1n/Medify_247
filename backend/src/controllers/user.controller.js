@@ -15,6 +15,12 @@ import {
   resolveEffectivePermissions as resolveDcPermissions
 } from '../utils/diagnosticCenterStaff.util.js';
 import { DC_ROLE_LABELS } from '../constants/diagnosticCenterPermissions.js';
+import {
+  findDoctorForStaffUser,
+  getStaffMembershipForUser,
+  resolveEffectivePermissions as resolveDoctorPerms
+} from '../utils/doctorStaff.util.js';
+import { DOCTOR_ROLE_LABELS } from '../constants/doctorPermissions.js';
 
 /**
  * GET /api/users/:id
@@ -44,6 +50,7 @@ export const getUserProfile = async (req, res) => {
     let roleData = null;
     let hospitalAccess = null;
     let diagnosticCenterAccess = null;
+    let doctorAccess = null;
 
     // Get role-specific data
     if (user.role === 'doctor') {
@@ -77,6 +84,18 @@ export const getUserProfile = async (req, res) => {
           };
         }
       }
+    } else if (user.role === 'doctor_staff') {
+      roleData = await findDoctorForStaffUser(user._id);
+      const membership = await getStaffMembershipForUser(user._id);
+      if (roleData && membership) {
+        doctorAccess = {
+          doctorId: roleData._id,
+          role: membership.role,
+          roleLabel: DOCTOR_ROLE_LABELS[membership.role],
+          permissions: resolveDoctorPerms(membership),
+          isOwner: false
+        };
+      }
     }
 
     res.json({
@@ -85,7 +104,8 @@ export const getUserProfile = async (req, res) => {
         user,
         roleData,
         hospitalAccess,
-        diagnosticCenterAccess
+        diagnosticCenterAccess,
+        doctorAccess
       }
     });
   } catch (error) {

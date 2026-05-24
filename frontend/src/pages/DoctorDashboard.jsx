@@ -1,14 +1,36 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import Navbar from '../components/Navbar';
+import {
+  canAccess,
+  canAccessTab,
+  ROLE_OPTIONS,
+  DOCTOR_PERMISSIONS,
+  ALL_PERMISSION_KEYS
+} from '../utils/doctorPermissions';
 import './DoctorDashboard.css';
+
+const DASHBOARD_TABS = [
+  { key: 'overview', label: 'Overview', icon: 'overview' },
+  { key: 'appointments', label: 'Appointments', icon: 'appointments' },
+  { key: 'serial-settings', label: 'Serial Settings', icon: 'serials' },
+  { key: 'date-management', label: 'Date Management', icon: 'date' },
+  { key: 'schedule', label: 'Schedule', icon: 'schedule' },
+  { key: 'profile', label: 'Profile', icon: 'profile' },
+  { key: 'staff', label: 'Team & Access', icon: 'staff' }
+];
 
 const DoctorDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
+  const [doctorId, setDoctorId] = useState(null);
+  const [permissions, setPermissions] = useState([]);
+  const [membership, setMembership] = useState(null);
+  const [staffMembers, setStaffMembers] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,16 +47,41 @@ const DoctorDashboard = () => {
   const [schedules, setSchedules] = useState([]);
   const [stats, setStats] = useState(null);
 
+  const isIndividualPractice =
+    user?.role === 'doctor_staff' ||
+    (doctorProfile && !doctorProfile.hospitalId && !doctorProfile.diagnosticCenterId);
+
+  const visibleTabs = useMemo(() => {
+    return DASHBOARD_TABS.filter((tab) => {
+      if (tab.key === 'staff' && !isIndividualPractice) return false;
+      return canAccessTab(permissions, tab.key);
+    });
+  }, [permissions, isIndividualPractice]);
+
   useEffect(() => {
-    if (!user || user.role !== 'doctor') {
+    if (!permissions.length || !visibleTabs.length) return;
+    if (!canAccessTab(permissions, activeTab)) {
+      setActiveTab(visibleTabs[0].key);
+    }
+  }, [permissions, visibleTabs, activeTab]);
+
+  useEffect(() => {
+    if (!user || !['doctor', 'doctor_staff'].includes(user.role)) {
       navigate('/doctor/login');
       return;
     }
-    fetchDoctorProfile();
+    initPracticeContext();
   }, [user]);
 
   useEffect(() => {
-    if (user && user.role === 'doctor') {
+    if (doctorId) {
+      fetchDoctorAccess();
+      if (activeTab === 'staff') fetchStaffMembers();
+    }
+  }, [doctorId, activeTab]);
+
+  useEffect(() => {
+    if (user && ['doctor', 'doctor_staff'].includes(user.role)) {
       if (activeTab === 'appointments') {
         fetchAppointments();
       } else if (activeTab === 'serial-settings') {
@@ -52,11 +99,84 @@ const DoctorDashboard = () => {
     }
   }, [user, activeTab, filters.filter, filters.search, pagination.page]);
 
+  const applyDoctorAccess = (access) => {
+    if (!access?.doctorId) return;
+    setDoctorId(access.doctorId);
+    if (access.permissions?.length) {
+      setPermissions(access.permissions);
+      setMembership(access);
+    }
+  };
+
+  const initPracticeContext = async () => {
+    const userId = user.id || user._id;
+
+    if (user.role === 'doctor_staff') {
+      try {
+        const savedAccess = localStorage.getItem('doctorAccess');
+        if (savedAccess) {
+          applyDoctorAccess(JSON.parse(savedAccess));
+        }
+
+        const userResponse = await api.get(`/users/${userId}`);
+        if (userResponse.data.success) {
+          const access = userResponse.data.data.doctorAccess;
+          applyDoctorAccess(access);
+          if (access) {
+            localStorage.setItem('doctorAccess', JSON.stringify(access));
+          }
+        }
+      } catch (err) {
+        console.error('Error loading practice context:', err);
+        if (!localStorage.getItem('doctorAccess')) {
+          setError('Failed to load practice access.');
+        }
+      }
+    }
+    await fetchDoctorProfile();
+  };
+
+  const fetchDoctorAccess = async () => {
+    try {
+      const response = await api.get(`/doctor-practice/${doctorId}/access`);
+      if (response.data.success) {
+        const perms = response.data.data.permissions || [];
+        if (perms.length) {
+          setPermissions(perms);
+        }
+        setMembership(response.data.data.membership);
+      }
+    } catch (err) {
+      console.error('Error fetching doctor access:', err);
+    }
+  };
+
+  const fetchStaffMembers = async () => {
+    try {
+      const response = await api.get(`/doctor-practice/${doctorId}/staff`);
+      if (response.data.success) {
+        setStaffMembers(response.data.data.staff || []);
+      }
+    } catch (err) {
+      console.error('Error fetching staff:', err);
+      if (err.response?.status === 403) {
+        setError('You do not have permission to view team members.');
+      }
+    }
+  };
+
   const fetchDoctorProfile = async () => {
     try {
       const response = await api.get('/doctor/profile');
       if (response.data.success) {
-        setDoctorProfile(response.data.data.doctor);
+        const doctor = response.data.data.doctor;
+        setDoctorProfile(doctor);
+        if (user.role === 'doctor') {
+          setDoctorId(doctor._id);
+          if (!doctor.hospitalId && !doctor.diagnosticCenterId) {
+            setPermissions(ALL_PERMISSION_KEYS);
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching doctor profile:', err);
@@ -327,60 +447,17 @@ const DoctorDashboard = () => {
         )}
 
         <div className="dashboard-tabs">
-          <button
-            className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-            </svg>
-            Overview
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'appointments' ? 'active' : ''}`}
-            onClick={() => setActiveTab('appointments')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-            </svg>
-            Appointments
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'serial-settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('serial-settings')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-            </svg>
-            Serial Settings
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'date-management' ? 'active' : ''}`}
-            onClick={() => setActiveTab('date-management')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-            </svg>
-            Date Management
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'schedule' ? 'active' : ''}`}
-            onClick={() => setActiveTab('schedule')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-            </svg>
-            Schedule
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'profile' ? 'active' : ''}`}
-            onClick={() => setActiveTab('profile')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-            </svg>
-            Profile
-          </button>
+          {visibleTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`tab-button ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <DoctorTabIcon type={tab.icon} />
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {activeTab === 'overview' && (
@@ -444,6 +521,18 @@ const DoctorDashboard = () => {
             setError={setError}
           />
         )}
+
+        {activeTab === 'staff' && doctorId && (
+          <DoctorStaffTab
+            doctorId={doctorId}
+            staff={staffMembers}
+            membership={membership}
+            canManage={canAccess(permissions, 'staff:manage')}
+            onRefresh={fetchStaffMembers}
+            setSuccess={setSuccess}
+            setError={setError}
+          />
+        )}
       </div>
 
       {/* View Appointment Modal */}
@@ -458,6 +547,357 @@ const DoctorDashboard = () => {
           formatTime={formatTime}
           loading={loading}
         />
+      )}
+    </div>
+  );
+};
+
+const DoctorTabIcon = ({ type }) => {
+  if (type === 'staff') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v1h8v-1zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-1a5 5 0 00-5-5H9a5 5 0 00-5 5v1h12z" />
+      </svg>
+    );
+  }
+  if (type === 'appointments' || type === 'date') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+      </svg>
+    );
+  }
+  if (type === 'serials') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+      </svg>
+    );
+  }
+  if (type === 'schedule') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+      </svg>
+    );
+  }
+  if (type === 'profile') {
+    return (
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor">
+      <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+    </svg>
+  );
+};
+
+const DoctorStaffTab = ({
+  doctorId,
+  staff,
+  membership,
+  canManage,
+  onRefresh,
+  setSuccess,
+  setError
+}) => {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    role: 'receptionist',
+    jobTitle: '',
+    permissions: []
+  });
+
+  const permissionGroups = useMemo(() => {
+    const groups = {};
+    DOCTOR_PERMISSIONS.forEach((p) => {
+      if (!groups[p.group]) groups[p.group] = [];
+      groups[p.group].push(p);
+    });
+    return groups;
+  }, []);
+
+  const resetForm = () => {
+    setForm({
+      name: '',
+      email: '',
+      phone: '',
+      password: '',
+      role: 'receptionist',
+      jobTitle: '',
+      permissions: []
+    });
+    setEditing(null);
+    setShowForm(false);
+  };
+
+  const openAddForm = () => {
+    setEditing(null);
+    setForm({
+      name: '',
+      email: '',
+      phone: '',
+      password: '',
+      role: 'receptionist',
+      jobTitle: '',
+      permissions: []
+    });
+    setShowForm(true);
+  };
+
+  const openEdit = (member) => {
+    setEditing(member);
+    setForm({
+      name: member.name,
+      email: member.email,
+      phone: member.phone,
+      password: '',
+      role: member.role,
+      jobTitle: member.jobTitle || '',
+      permissions: member.permissions || []
+    });
+    setShowForm(true);
+  };
+
+  const togglePermission = (key) => {
+    setForm((prev) => ({
+      ...prev,
+      permissions: prev.permissions.includes(key)
+        ? prev.permissions.filter((p) => p !== key)
+        : [...prev.permissions, key]
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const payload = editing
+        ? {
+            role: form.role,
+            jobTitle: form.jobTitle,
+            permissions: form.role === 'custom' ? form.permissions : undefined
+          }
+        : {
+            name: form.name,
+            email: form.email,
+            phone: form.phone,
+            password: form.password,
+            role: form.role,
+            jobTitle: form.jobTitle,
+            permissions: form.role === 'custom' ? form.permissions : undefined
+          };
+
+      const response = editing
+        ? await api.put(`/doctor-practice/${doctorId}/staff/${editing._id}`, payload)
+        : await api.post(`/doctor-practice/${doctorId}/staff`, payload);
+
+      if (response.data.success) {
+        setSuccess(editing ? 'Team member updated' : 'Team member added');
+        resetForm();
+        onRefresh();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save team member');
+      setTimeout(() => setError(''), 4000);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleActive = async (member) => {
+    try {
+      const response = await api.put(`/doctor-practice/${doctorId}/staff/${member._id}`, {
+        isActive: !member.isActive
+      });
+      if (response.data.success) {
+        setSuccess(member.isActive ? 'Team member deactivated' : 'Team member activated');
+        onRefresh();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update status');
+      setTimeout(() => setError(''), 4000);
+    }
+  };
+
+  const handleRemove = async (member) => {
+    if (!window.confirm(`Remove ${member.name} from the practice team?`)) return;
+    try {
+      const response = await api.delete(`/doctor-practice/${doctorId}/staff/${member._id}`);
+      if (response.data.success) {
+        setSuccess('Team member removed');
+        onRefresh();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to remove team member');
+      setTimeout(() => setError(''), 4000);
+    }
+  };
+
+  return (
+    <div className="staff-tab">
+      <div className="home-services-header">
+        <div>
+          <h2>Team & Access Control</h2>
+          <p className="staff-tab-desc">
+            Add practice staff and assign roles with specific permissions.
+            {membership?.roleLabel && ` Your role: ${membership.roleLabel}.`}
+          </p>
+        </div>
+        {canManage && (
+          <button type="button" className="btn-primary" onClick={openAddForm}>
+            + Add Team Member
+          </button>
+        )}
+      </div>
+
+      <div className="staff-table-wrap">
+        <table className="staff-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Job title</th>
+              <th>Status</th>
+              {canManage && <th>Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {staff.length === 0 ? (
+              <tr>
+                <td colSpan={canManage ? 6 : 5} className="empty-cell">No team members yet.</td>
+              </tr>
+            ) : (
+              staff.map((member) => (
+                <tr key={member._id} className={!member.isActive ? 'inactive-row' : ''}>
+                  <td>
+                    {member.name}
+                    {member.isOwner && <span className="owner-tag">Owner</span>}
+                  </td>
+                  <td>{member.email}</td>
+                  <td>{member.roleLabel}</td>
+                  <td>{member.jobTitle || '—'}</td>
+                  <td>
+                    <span className={`status-pill ${member.isActive ? 'active' : 'inactive'}`}>
+                      {member.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  {canManage && (
+                    <td className="staff-actions">
+                      {!member.isOwner && (
+                        <>
+                          <button type="button" className="btn-link" onClick={() => openEdit(member)}>Edit</button>
+                          <button type="button" className="btn-link" onClick={() => handleToggleActive(member)}>
+                            {member.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button type="button" className="btn-link danger" onClick={() => handleRemove(member)}>Remove</button>
+                        </>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showForm && canManage && createPortal(
+        <div className="modal-overlay staff-modal-overlay" onClick={resetForm} role="presentation">
+          <div
+            className="modal-content staff-modal-content"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="modal-header">
+              <h2>{editing ? 'Edit Team Member' : 'Add Team Member'}</h2>
+              <button type="button" className="close-button" onClick={resetForm} aria-label="Close">×</button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div className="modal-body">
+                {editing ? (
+                  <p className="staff-edit-user">
+                    Editing <strong>{editing.name}</strong> ({editing.email})
+                  </p>
+                ) : (
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label>Full name *</label>
+                      <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                    </div>
+                    <div className="form-group">
+                      <label>Job title</label>
+                      <input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label>Email *</label>
+                      <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                    </div>
+                    <div className="form-group">
+                      <label>Phone *</label>
+                      <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+                    </div>
+                    <div className="form-group">
+                      <label>Password *</label>
+                      <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} minLength={8} required />
+                    </div>
+                  </div>
+                )}
+                <div className="form-group">
+                  <label>Role *</label>
+                  <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {form.role === 'custom' && (
+                  <div className="permissions-grid">
+                    <p className="permissions-hint">Select individual permissions:</p>
+                    {Object.entries(permissionGroups).map(([group, perms]) => (
+                      <div key={group} className="permission-group">
+                        <strong>{group}</strong>
+                        <div className="permission-checkboxes">
+                          {perms.map((p) => (
+                            <label key={p.key} className="permission-check">
+                              <input
+                                type="checkbox"
+                                checked={form.permissions.includes(p.key)}
+                                onChange={() => togglePermission(p.key)}
+                              />
+                              {p.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={resetForm}>Cancel</button>
+                <button type="submit" disabled={submitting}>
+                  {submitting ? 'Saving...' : editing ? 'Update' : 'Add member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
