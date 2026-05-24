@@ -15,7 +15,7 @@ const Home = () => {
         navigate('/hospital/dashboard');
       } else if (user.role === 'diagnostic_center_admin') {
         navigate('/diagnostic-center/dashboard');
-      } else if (user.role === 'super_admin') {
+      } else if (user.role === 'super_admin' || user.role === 'super_admin_staff') {
         navigate('/super-admin/dashboard');
       } else if (user.role === 'doctor' || user.role === 'doctor_staff') {
         navigate('/doctor/dashboard');

@@ -73,12 +73,11 @@ const SuperAdminLogin = () => {
       if (result.success) {
         const user = result.data.user;
         
-        // Check if user is super admin
-        if (user.role !== 'super_admin') {
-          setError('Access denied. This is a super admin only login.');
-          // Logout the user
+        if (!['super_admin', 'super_admin_staff'].includes(user.role)) {
+          setError('Access denied. This login is for platform administrators only.');
           localStorage.removeItem('token');
           localStorage.removeItem('user');
+          localStorage.removeItem('adminAccess');
           setLoading(false);
           return;
         }

@@ -60,6 +60,11 @@ export const AuthProvider = ({ children }) => {
         } else {
           localStorage.removeItem('doctorAccess');
         }
+        if (response.data.data.adminAccess) {
+          localStorage.setItem('adminAccess', JSON.stringify(response.data.data.adminAccess));
+        } else {
+          localStorage.removeItem('adminAccess');
+        }
         setUser(user);
         
         console.log('💾 Token and user saved to localStorage');
@@ -179,6 +184,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('doctorAccess');
+    localStorage.removeItem('adminAccess');
     setUser(null);
   };
 

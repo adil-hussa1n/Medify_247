@@ -75,7 +75,7 @@ const Login = () => {
           navigate('/hospital/dashboard');
         } else if (role === 'diagnostic_center_admin') {
           navigate('/diagnostic-center/dashboard');
-        } else if (role === 'super_admin') {
+        } else if (role === 'super_admin' || role === 'super_admin_staff') {
           navigate('/super-admin/dashboard');
         } else if (role === 'patient') {
           navigate('/user/dashboard');

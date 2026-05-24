@@ -11,6 +11,14 @@ import {
   isIndividualDoctor,
   resolveEffectivePermissions
 } from '../utils/doctorStaff.util.js';
+import {
+  SUPER_ADMIN_PERMISSIONS,
+  SUPER_ADMIN_ROLE_LABELS
+} from '../constants/superAdminPermissions.js';
+import {
+  getStaffMembershipForUser as getAdminStaffMembership,
+  resolveEffectivePermissions as resolveAdminPermissions
+} from '../utils/superAdminStaff.util.js';
 import { generateOTP, verifyOTP } from '../utils/otp.util.js';
 import { validationResult } from 'express-validator';
 
@@ -186,6 +194,7 @@ export const login = async (req, res) => {
     // Get role-specific data
     let roleData = null;
     let doctorAccess = null;
+    let adminAccess = null;
 
     if (user.role === 'doctor') {
       roleData = await Doctor.findOne({ userId: user._id });
@@ -201,6 +210,27 @@ export const login = async (req, res) => {
           isOwner: false
         };
       }
+    } else if (user.role === 'super_admin') {
+      adminAccess = {
+        role: 'owner',
+        roleLabel: SUPER_ADMIN_ROLE_LABELS.owner,
+        permissions: [...SUPER_ADMIN_PERMISSIONS],
+        isOwner: true
+      };
+    } else if (user.role === 'super_admin_staff') {
+      const membership = await getAdminStaffMembership(user._id);
+      if (!membership?.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your admin team membership is inactive or revoked.'
+        });
+      }
+      adminAccess = {
+        role: membership.role,
+        roleLabel: SUPER_ADMIN_ROLE_LABELS[membership.role],
+        permissions: resolveAdminPermissions(membership),
+        isOwner: false
+      };
     }
 
     res.json({
@@ -217,6 +247,7 @@ export const login = async (req, res) => {
         },
         roleData,
         doctorAccess,
+        adminAccess,
         token
       }
     });

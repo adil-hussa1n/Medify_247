@@ -222,7 +222,7 @@ function App() {
           <Route 
             path="/super-admin/dashboard" 
             element={
-              <PrivateRoute requiredRole="super_admin">
+              <PrivateRoute requiredRole={['super_admin', 'super_admin_staff']}>
                 <SuperAdminDashboard />
               </PrivateRoute>
             } 

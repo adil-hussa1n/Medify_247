@@ -1,9 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import Navbar from '../components/Navbar';
+import AdminTeamTab from '../components/AdminTeamTab';
+import {
+  canAccess,
+  canAccessTab,
+  isPlatformAdmin
+} from '../utils/superAdminPermissions';
 import './SuperAdminDashboard.css';
+
+const DASHBOARD_TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'pending', label: 'Pending Approvals' },
+  { key: 'banners', label: 'Banners' },
+  { key: 'notifications', label: 'Broadcast' },
+  { key: 'users', label: 'Users' },
+  { key: 'doctors', label: 'Doctors' },
+  { key: 'hospitals', label: 'Hospitals' },
+  { key: 'diagnostic-centers', label: 'Diagnostic Centers' },
+  { key: 'activity-logs', label: 'Activity Logs' },
+  { key: 'export', label: 'Export Data' },
+  { key: 'team', label: 'Admin Team' }
+];
 
 const SuperAdminDashboard = () => {
   const { user, logout } = useAuth();
@@ -39,8 +59,15 @@ const SuperAdminDashboard = () => {
   const [userGrowth, setUserGrowth] = useState([]);
   const [recentRegistrations, setRecentRegistrations] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState([]);
+  const [adminMembership, setAdminMembership] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const visibleTabs = useMemo(
+    () => DASHBOARD_TABS.filter((tab) => canAccessTab(permissions, tab.key)),
+    [permissions]
+  );
 
   // Notification form
   const [notificationForm, setNotificationForm] = useState({
@@ -118,15 +145,57 @@ const SuperAdminDashboard = () => {
   const [editingDiagnosticCenter, setEditingDiagnosticCenter] = useState(null);
 
   useEffect(() => {
-    if (!user || user.role !== 'super_admin') {
+    if (!user || !isPlatformAdmin(user.role)) {
       navigate('/super-admin/login');
       return;
     }
-    fetchDashboardStats();
+    initAdminContext();
   }, [user]);
 
   useEffect(() => {
-    if (user && user.role === 'super_admin') {
+    if (!permissions.length || !visibleTabs.length) return;
+    if (!canAccessTab(permissions, activeTab)) {
+      setActiveTab(visibleTabs[0].key);
+    }
+  }, [permissions, visibleTabs, activeTab]);
+
+  useEffect(() => {
+    if (user && isPlatformAdmin(user.role) && canAccessTab(permissions, 'overview')) {
+      fetchDashboardStats();
+    }
+  }, [user, permissions]);
+
+  const initAdminContext = async () => {
+    try {
+      const saved = localStorage.getItem('adminAccess');
+      if (saved) {
+        const access = JSON.parse(saved);
+        if (access.permissions?.length) {
+          setPermissions(access.permissions);
+          setAdminMembership(access);
+        }
+      }
+      const response = await api.get('/admin/team/access');
+      if (response.data.success) {
+        const { permissions: perms, membership } = response.data.data;
+        setPermissions(perms || []);
+        setAdminMembership(membership);
+        localStorage.setItem('adminAccess', JSON.stringify({
+          role: membership?.role || 'owner',
+          roleLabel: membership?.roleLabel,
+          permissions: perms,
+          isOwner: response.data.data.isOwner
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to load admin access:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && isPlatformAdmin(user.role)) {
       if (activeTab === 'pending') fetchPendingItems();
       if (activeTab === 'banners') fetchBanners();
       if (activeTab === 'hospitals') fetchHospitals();
@@ -135,7 +204,7 @@ const SuperAdminDashboard = () => {
       if (activeTab === 'diagnostic-centers') fetchDiagnosticCenters();
       if (activeTab === 'activity-logs') fetchActivityLogs();
     }
-  }, [activeTab, usersFilters, doctorsFilters, diagnosticCentersFilters, activityLogsFilters, usersPagination.page, doctorsPagination.page, diagnosticCentersPagination.page, activityLogsPagination.page]);
+  }, [activeTab, user, permissions, usersFilters, doctorsFilters, diagnosticCentersFilters, activityLogsFilters, usersPagination.page, doctorsPagination.page, diagnosticCentersPagination.page, activityLogsPagination.page]);
 
   const fetchDashboardStats = async () => {
     try {
@@ -698,7 +767,12 @@ const SuperAdminDashboard = () => {
         <div className="dashboard-header">
           <div>
             <h1 className="dashboard-title">Super Admin Dashboard</h1>
-            <p className="dashboard-subtitle">Welcome back, {user?.name || 'Super Admin'}</p>
+            <p className="dashboard-subtitle">
+              Welcome back, {user?.name || 'Admin'}
+              {adminMembership?.roleLabel && (
+                <span className="admin-role-badge"> · {adminMembership.roleLabel}</span>
+              )}
+            </p>
           </div>
           
         </div>
@@ -722,100 +796,23 @@ const SuperAdminDashboard = () => {
         )}
 
         <div className="dashboard-tabs">
-          <button 
-            className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
-            </svg>
-            Overview
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}
-            onClick={() => setActiveTab('pending')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-            </svg>
-            Pending Approvals
-            {pendingItems && (pendingItems.counts?.doctors + pendingItems.counts?.hospitals + pendingItems.counts?.diagnosticCenters > 0) && (
-              <span className="badge">{pendingItems.counts.doctors + pendingItems.counts.hospitals + pendingItems.counts.diagnosticCenters}</span>
-            )}
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'banners' ? 'active' : ''}`}
-            onClick={() => setActiveTab('banners')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-            </svg>
-            Banners
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'notifications' ? 'active' : ''}`}
-            onClick={() => setActiveTab('notifications')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-            </svg>
-            Broadcast
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => setActiveTab('users')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-            </svg>
-            Users
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'doctors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('doctors')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-            </svg>
-            Doctors
-          </button>
-          
-          <button 
-            className={`tab-button ${activeTab === 'hospitals' ? 'active' : ''}`}
-            onClick={() => setActiveTab('hospitals')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-            </svg>
-            Hospitals
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'diagnostic-centers' ? 'active' : ''}`}
-            onClick={() => setActiveTab('diagnostic-centers')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-            </svg>
-            Diagnostic Centers
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'activity-logs' ? 'active' : ''}`}
-            onClick={() => setActiveTab('activity-logs')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-            </svg>
-            Activity Logs
-          </button>
-          <button 
-            className={`tab-button ${activeTab === 'export' ? 'active' : ''}`}
-            onClick={() => setActiveTab('export')}
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-            Export Data
-          </button>
+          {visibleTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`tab-button ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+              {tab.key === 'pending' && pendingItems && (
+                pendingItems.counts?.doctors + pendingItems.counts?.hospitals + pendingItems.counts?.diagnosticCenters > 0
+              ) && (
+                <span className="badge">
+                  {pendingItems.counts.doctors + pendingItems.counts.hospitals + pendingItems.counts.diagnosticCenters}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
 
         <div className="tab-content">
@@ -2464,6 +2461,14 @@ const SuperAdminDashboard = () => {
                 )}
               </div>
             </div>
+          )}
+
+          {activeTab === 'team' && (
+            <AdminTeamTab
+              canManage={canAccess(permissions, 'team:manage')}
+              onSuccess={(msg) => { setSuccess(msg); setError(''); }}
+              onError={(msg) => { setError(msg); setSuccess(''); }}
+            />
           )}
 
           {activeTab === 'export' && (
