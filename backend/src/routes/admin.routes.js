@@ -48,6 +48,7 @@ import {
   adminGuard
 } from '../middlewares/superAdminPermission.middleware.js';
 import upload, { uploadToCloudinaryMiddleware } from '../middlewares/upload.middleware.js';
+import { normalizePhoneE164, isValidE164Phone } from '../utils/phone.util.js';
 
 const router = express.Router();
 
@@ -70,8 +71,14 @@ router.post('/team', ...adminGuard('team:manage'), [
   body('email').isEmail().withMessage('Valid email is required'),
   body('phone')
     .trim()
+    .customSanitizer(normalizePhoneE164)
     .notEmpty().withMessage('Phone number is required')
-    .matches(/^\+?[1-9]\d{1,14}$/).withMessage('Valid phone number is required'),
+    .custom((value) => {
+      if (!isValidE164Phone(value)) {
+        throw new Error('Enter a valid phone number (e.g. +8801712345678)');
+      }
+      return true;
+    }),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   body('role').isIn(staffRoleValidator).withMessage('Invalid role'),
   body('permissions').optional().isArray(),

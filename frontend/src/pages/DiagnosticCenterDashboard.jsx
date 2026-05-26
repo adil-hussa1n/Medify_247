@@ -3100,15 +3100,23 @@ const DiagnosticCenterStaffTab = ({
                     </span>
                   </td>
                   {canManage && (
-                    <td className="staff-actions">
+                    <td className="staff-actions-cell">
                       {!member.isOwner && (
-                        <>
-                          <button type="button" className="btn-link" onClick={() => openEdit(member)}>Edit</button>
-                          <button type="button" className="btn-link" onClick={() => handleToggleActive(member)}>
+                        <div className="action-buttons">
+                          <button type="button" className="action-btn edit-btn" onClick={() => openEdit(member)}>
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className={`action-btn ${member.isActive ? 'edit-btn' : 'view-btn'}`}
+                            onClick={() => handleToggleActive(member)}
+                          >
                             {member.isActive ? 'Deactivate' : 'Activate'}
                           </button>
-                          <button type="button" className="btn-link danger" onClick={() => handleRemove(member)}>Remove</button>
-                        </>
+                          <button type="button" className="action-btn delete-btn" onClick={() => handleRemove(member)}>
+                            Remove
+                          </button>
+                        </div>
                       )}
                     </td>
                   )}

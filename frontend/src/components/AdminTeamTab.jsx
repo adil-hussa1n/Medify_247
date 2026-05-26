@@ -4,7 +4,11 @@ import {
   SUPER_ADMIN_PERMISSIONS,
   ROLE_OPTIONS
 } from '../utils/superAdminPermissions';
-import '../pages/DoctorDashboard.css';
+import {
+  formatPhoneNumber,
+  normalizePhoneForApi,
+  isValidApiPhone
+} from '../utils/phoneFormat';
 
 const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
   const [team, setTeam] = useState([]);
@@ -14,7 +18,7 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
   const [form, setForm] = useState({
     name: '',
     email: '',
-    phone: '',
+    phone: '+88',
     password: '',
     role: 'support',
     jobTitle: '',
@@ -45,7 +49,7 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
     setForm({
       name: '',
       email: '',
-      phone: '',
+      phone: '+88',
       password: '',
       role: 'support',
       jobTitle: '',
@@ -59,7 +63,7 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
     setForm({
       name: member.name,
       email: member.email,
-      phone: member.phone,
+      phone: formatPhoneNumber(member.phone || '+88'),
       password: '',
       role: member.role,
       jobTitle: member.jobTitle || '',
@@ -68,15 +72,34 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
     setShowForm(true);
   };
 
+  const getApiErrorMessage = (err, fallback) => {
+    const data = err.response?.data;
+    if (data?.errors?.length) {
+      return data.errors.map((e) => e.msg).join('. ');
+    }
+    return data?.message || fallback;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const phone = normalizePhoneForApi(form.phone);
+      if (!editing && !isValidApiPhone(phone)) {
+        onError?.('Enter a valid phone number (e.g. +8801712345678)');
+        return;
+      }
+
+      if (form.role === 'custom' && form.permissions.length === 0) {
+        onError?.('Select at least one permission for a custom role');
+        return;
+      }
+
       const payload = {
-        name: form.name,
-        email: form.email,
-        phone: form.phone,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone,
         role: form.role,
-        jobTitle: form.jobTitle,
+        jobTitle: form.jobTitle.trim(),
         ...(form.role === 'custom' ? { permissions: form.permissions } : {})
       };
       if (!editing) {
@@ -93,7 +116,7 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
         fetchTeam();
       }
     } catch (err) {
-      onError?.(err.response?.data?.message || 'Failed to save team member');
+      onError?.(getApiErrorMessage(err, 'Failed to save team member'));
     }
   };
 
@@ -143,7 +166,7 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
 
   return (
     <div className="staff-tab admin-team-tab">
-      <div className="staff-tab-header">
+      <div className="admin-team-header">
         <div>
           <h2>Admin Team & Access Control</h2>
           <p className="staff-tab-desc">
@@ -190,15 +213,15 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
                       </span>
                     </td>
                     {canManage && (
-                      <td className="staff-actions">
+                      <td className="admin-team-actions-cell">
                         {!member.isOwner && (
-                          <>
-                            <button type="button" className="btn-sm" onClick={() => openEdit(member)}>Edit</button>
-                            <button type="button" className="btn-sm" onClick={() => toggleActive(member)}>
+                          <div className="admin-team-actions">
+                            <button type="button" className="admin-team-action-btn edit" onClick={() => openEdit(member)}>Edit</button>
+                            <button type="button" className="admin-team-action-btn toggle" onClick={() => toggleActive(member)}>
                               {member.isActive ? 'Deactivate' : 'Activate'}
                             </button>
-                            <button type="button" className="btn-sm btn-danger" onClick={() => removeMember(member)}>Remove</button>
-                          </>
+                            <button type="button" className="admin-team-action-btn delete" onClick={() => removeMember(member)}>Remove</button>
+                          </div>
                         )}
                       </td>
                     )}
@@ -211,64 +234,116 @@ const AdminTeamTab = ({ canManage, onSuccess, onError }) => {
       </div>
 
       {showForm && canManage && (
-        <div className="modal-overlay staff-modal-overlay" onClick={resetForm} role="presentation">
-          <div className="modal-content staff-modal-content" onClick={(e) => e.stopPropagation()} role="dialog">
-            <h3>{editing ? 'Edit Team Member' : 'Add Team Member'}</h3>
-            <form onSubmit={handleSubmit}>
-              <div className="form-row">
-                <label>Name</label>
-                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required disabled={!!editing} />
-              </div>
-              {!editing && (
-                <>
-                  <div className="form-row">
-                    <label>Email</label>
-                    <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                  </div>
-                  <div className="form-row">
-                    <label>Phone</label>
-                    <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
-                  </div>
-                  <div className="form-row">
-                    <label>Password</label>
-                    <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} />
-                  </div>
-                </>
-              )}
-              <div className="form-row">
-                <label>Role</label>
-                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                  {ROLE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-row">
-                <label>Job Title</label>
-                <input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} placeholder="e.g. Support Lead" />
-              </div>
-              {form.role === 'custom' && (
-                <div className="permissions-grid">
-                  <p className="permissions-hint">Select permissions for this member:</p>
-                  {Object.entries(groupedPermissions).map(([group, perms]) => (
-                    <div key={group} className="permission-group">
-                      <h4>{group}</h4>
-                      {perms.map((p) => (
-                        <label key={p.key} className="permission-check">
-                          <input
-                            type="checkbox"
-                            checked={form.permissions.includes(p.key)}
-                            onChange={() => togglePermission(p.key)}
-                          />
-                          {p.label}
-                        </label>
-                      ))}
-                    </div>
-                  ))}
+        <div className="admin-team-modal-overlay" onClick={resetForm} role="presentation">
+          <div
+            className="admin-team-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-team-modal-title"
+          >
+            <div className="admin-team-modal-header">
+              <h2 id="admin-team-modal-title">{editing ? 'Edit Team Member' : 'Add Team Member'}</h2>
+              <button type="button" className="admin-team-modal-close" onClick={resetForm} aria-label="Close">
+                ×
+              </button>
+            </div>
+            <form className="admin-team-form" onSubmit={handleSubmit}>
+              <div className="admin-team-modal-body">
+                <div className="admin-team-form-group">
+                  <label htmlFor="admin-team-name">Name *</label>
+                  <input
+                    id="admin-team-name"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    required
+                    disabled={!!editing}
+                  />
                 </div>
-              )}
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={resetForm}>Cancel</button>
+                {!editing && (
+                  <>
+                    <div className="admin-team-form-group">
+                      <label htmlFor="admin-team-email">Email *</label>
+                      <input
+                        id="admin-team-email"
+                        type="email"
+                        value={form.email}
+                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="admin-team-form-group">
+                      <label htmlFor="admin-team-phone">Phone *</label>
+                      <input
+                        id="admin-team-phone"
+                        type="tel"
+                        value={form.phone}
+                        onChange={(e) => setForm({ ...form, phone: formatPhoneNumber(e.target.value) })}
+                        placeholder="+8801712345678"
+                        required
+                      />
+                      <small className="admin-team-field-hint">Use country code, e.g. +8801712345678</small>
+                    </div>
+                    <div className="admin-team-form-group">
+                      <label htmlFor="admin-team-password">Password *</label>
+                      <input
+                        id="admin-team-password"
+                        type="password"
+                        value={form.password}
+                        onChange={(e) => setForm({ ...form, password: e.target.value })}
+                        required
+                        minLength={8}
+                      />
+                      <small className="admin-team-field-hint">Minimum 8 characters</small>
+                    </div>
+                  </>
+                )}
+                <div className="admin-team-form-group">
+                  <label htmlFor="admin-team-role">Role *</label>
+                  <select
+                    id="admin-team-role"
+                    value={form.role}
+                    onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  >
+                    {ROLE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="admin-team-form-group">
+                  <label htmlFor="admin-team-job-title">Job Title</label>
+                  <input
+                    id="admin-team-job-title"
+                    value={form.jobTitle}
+                    onChange={(e) => setForm({ ...form, jobTitle: e.target.value })}
+                    placeholder="e.g. Support Lead"
+                  />
+                </div>
+                {form.role === 'custom' && (
+                  <div className="admin-team-permissions">
+                    <p className="admin-team-permissions-hint">Select permissions for this member:</p>
+                    {Object.entries(groupedPermissions).map(([group, perms]) => (
+                      <div key={group} className="admin-team-permission-group">
+                        <h4>{group}</h4>
+                        <div className="admin-team-permission-list">
+                          {perms.map((p) => (
+                            <label key={p.key} className="admin-team-permission-check">
+                              <input
+                                type="checkbox"
+                                checked={form.permissions.includes(p.key)}
+                                onChange={() => togglePermission(p.key)}
+                              />
+                              {p.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="admin-team-modal-footer">
+                <button type="button" className="admin-team-btn-secondary" onClick={resetForm}>Cancel</button>
                 <button type="submit" className="btn-primary">
                   {editing ? 'Save Changes' : 'Add Member'}
                 </button>

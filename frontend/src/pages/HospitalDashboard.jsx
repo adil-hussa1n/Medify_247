@@ -1210,34 +1210,34 @@ const HomeServicesTab = ({ hospitalId, services, onRefresh, setSuccess, setError
         ) : (
           services.map((service) => (
             <div key={service._id} className="service-card">
-              <div className="service-card-header">
-                <h3>{service.serviceType}</h3>
-                <div className="service-actions">
-                  <button
-                    onClick={() => { setSelectedService(service); setShowDetailsModal(true); }}
-                    className="action-btn"
-                    title="View Details"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => { setSelectedService(service); setShowSerialModal(true); }}
-                    className="action-btn"
-                    title="Serial Settings"
-                  >
-                    Serial
-                  </button>
-                  <button onClick={() => handleEdit(service)} className="action-btn edit-btn" title="Edit">
-                    <svg viewBox="0 0 20 20" fill="currentColor" style={{ width: '14px', height: '14px' }}>
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                    </svg>
-                  </button>
-                  <button onClick={() => handleDeleteClick(service)} className="action-btn delete-btn" title="Delete">
-                    <svg viewBox="0 0 20 20" fill="currentColor" style={{ width: '14px', height: '14px' }}>
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
+              <h3 className="service-card-title">{service.serviceType}</h3>
+              <div className="service-actions">
+                <button
+                  type="button"
+                  onClick={() => { setSelectedService(service); setShowDetailsModal(true); }}
+                  className="action-btn view-btn"
+                  title="View Details"
+                >
+                  View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedService(service); setShowSerialModal(true); }}
+                  className="action-btn serial-btn"
+                  title="Serial Settings"
+                >
+                  Serial
+                </button>
+                <button type="button" onClick={() => handleEdit(service)} className="action-btn edit-btn" title="Edit">
+                  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                  </svg>
+                </button>
+                <button type="button" onClick={() => handleDeleteClick(service)} className="action-btn delete-btn" title="Delete">
+                  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </button>
               </div>
               <p className="service-price">{service.price} tk</p>
               {service.note && <p className="service-note">{service.note}</p>}
@@ -3802,15 +3802,23 @@ const HospitalStaffTab = ({
                     </span>
                   </td>
                   {canManage && (
-                    <td className="staff-actions">
+                    <td className="staff-actions-cell">
                       {!member.isOwner && (
-                        <>
-                          <button type="button" className="btn-link" onClick={() => openEdit(member)}>Edit</button>
-                          <button type="button" className="btn-link" onClick={() => handleToggleActive(member)}>
+                        <div className="action-buttons">
+                          <button type="button" className="action-btn edit-btn" onClick={() => openEdit(member)}>
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className={`action-btn ${member.isActive ? 'edit-btn' : 'view-btn'}`}
+                            onClick={() => handleToggleActive(member)}
+                          >
                             {member.isActive ? 'Deactivate' : 'Activate'}
                           </button>
-                          <button type="button" className="btn-link danger" onClick={() => handleRemove(member)}>Remove</button>
-                        </>
+                          <button type="button" className="action-btn delete-btn" onClick={() => handleRemove(member)}>
+                            Remove
+                          </button>
+                        </div>
                       )}
                     </td>
                   )}

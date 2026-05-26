@@ -1092,14 +1092,14 @@
   color: #742a2a;
 }
 
-.staff-actions {
+.staff-table .action-buttons {
   display: flex;
-  gap: 8px;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.btn-link.danger {
-  color: #e53e3e;
+.staff-table td.staff-actions-cell {
+  min-width: 240px;
 }
 
 .staff-modal-overlay {
