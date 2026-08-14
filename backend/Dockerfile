@@ -8,6 +8,9 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
+# Bust cache for source code changes
+ARG CACHEBUST=1
+
 # Copy application files
 COPY . .
 
