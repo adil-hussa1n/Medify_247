@@ -59,6 +59,27 @@ io.on('connection', (socket) => {
 // Make io accessible to routes
 app.set('io', io);
 
+// Debug route - test if Express routing works at all
+app.get('/api/debug', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'API debug route works',
+    routes_loaded: {
+      auth: !!authRoutes,
+      patient: !!patientRoutes,
+      doctor: !!doctorRoutes,
+      doctorPortal: !!doctorPortalRoutes,
+      doctorPractice: !!doctorPracticeRoutes,
+      hospital: !!hospitalRoutes,
+      diagnosticCenter: !!diagnosticCenterRoutes,
+      admin: !!adminRoutes,
+      user: !!userRoutes,
+      shared: !!sharedRoutes,
+      notification: !!notificationRoutes
+    }
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/patient', patientRoutes);
