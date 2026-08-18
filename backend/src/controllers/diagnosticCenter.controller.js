@@ -78,37 +78,61 @@ export const registerDiagnosticCenter = async (req, res) => {
     }
 
     // Create user with diagnostic_center_admin role
-    const user = await User.create({
-      name: ownerName,
-      email,
-      phone: ownerPhone,
-      password,
-      role: 'diagnostic_center_admin',
-      isActive: false // Inactive until center is approved
-    });
+    let user;
+    try {
+      user = await User.create({
+        name: ownerName,
+        email,
+        phone: ownerPhone,
+        password,
+        role: 'diagnostic_center_admin',
+        isActive: false
+      });
+    } catch (userErr) {
+      if (userErr.code === 11000) {
+        return res.status(400).json({
+          success: false,
+          message: 'Account with this email or phone number already exists.'
+        });
+      }
+      throw userErr;
+    }
 
     // Create diagnostic center record with status: pending_super_admin
-    const diagnosticCenter = await DiagnosticCenter.create({
-      userId: user._id,
-      name,
-      phone,
-      email,
-      address,
-      ownerName,
-      ownerPhone,
-      tradeLicenseNumber,
-      tradeLicenseDocument: tradeLicenseDocument || '',
-      status: 'pending_super_admin',
-      admins: [user._id] // Add creator as admin
-    });
+    let diagnosticCenter;
+    try {
+      diagnosticCenter = await DiagnosticCenter.create({
+        userId: user._id,
+        name,
+        phone,
+        email,
+        address,
+        ownerName,
+        ownerPhone,
+        tradeLicenseNumber,
+        tradeLicenseDocument: tradeLicenseDocument || '',
+        status: 'pending_super_admin',
+        admins: [user._id]
+      });
 
-    await DiagnosticCenterStaff.create({
-      diagnosticCenterId: diagnosticCenter._id,
-      userId: user._id,
-      role: 'owner',
-      permissions: getPermissionsForRole('owner'),
-      isActive: true
-    });
+      await DiagnosticCenterStaff.create({
+        diagnosticCenterId: diagnosticCenter._id,
+        userId: user._id,
+        role: 'owner',
+        permissions: getPermissionsForRole('owner'),
+        isActive: true
+      });
+    } catch (centerErr) {
+      // Rollback user creation to prevent orphaned user records
+      await User.findByIdAndDelete(user._id);
+      if (centerErr.code === 11000) {
+        return res.status(400).json({
+          success: false,
+          message: 'Diagnostic Center or Trade License Number is already registered.'
+        });
+      }
+      throw centerErr;
+    }
 
     // Log registration event & send notification safely
     try {
