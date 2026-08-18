@@ -68,7 +68,18 @@ const Register = () => {
       if (result.success) {
         navigate('/');
       } else {
-        setError(result.message || 'Registration failed. Please try again.');
+        if (result.errors && Array.isArray(result.errors)) {
+          const fieldErrors = {};
+          result.errors.forEach((e) => {
+            if (e.param || e.path) {
+              fieldErrors[e.param || e.path] = e.msg;
+            }
+          });
+          setErrors(fieldErrors);
+          setError(result.errors[0]?.msg || 'Validation failed. Please check your inputs.');
+        } else {
+          setError(result.message || 'Registration failed. Please try again.');
+        }
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
