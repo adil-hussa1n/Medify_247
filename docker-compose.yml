@@ -6,9 +6,9 @@ services:
     container_name: medify247-backend
     restart: unless-stopped
     ports:
-      - "3308:3308"
+      - "3000:3000"
     environment:
-      - PORT=3308
+      - PORT=3000
       - NODE_ENV=production
       - BACKEND_URL=https://medify.daruntech.cloud
       - MONGO_URI=mongodb://medify247:Medify%402026@213.210.36.172:3308/?authSource=admin&directConnection=true

@@ -18,7 +18,7 @@ COPY . .
 RUN mkdir -p uploads/images uploads/documents uploads/reports uploads/prescriptions uploads/serial-lists exports
 
 # Expose port
-EXPOSE 3308
+EXPOSE 3000
 
 # Start application
 CMD ["npm", "start"]
