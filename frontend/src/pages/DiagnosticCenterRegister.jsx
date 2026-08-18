@@ -107,6 +107,7 @@ const DiagnosticCenterRegister = () => {
         setError(response.data.message || 'Registration failed. Please try again.');
       }
     } catch (err) {
+      console.error('DiagnosticCenterRegister submit error:', err.response?.data || err);
       if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
         const fieldErrors = {};
         err.response.data.errors.forEach((e) => {
@@ -116,8 +117,12 @@ const DiagnosticCenterRegister = () => {
         });
         setErrors(fieldErrors);
         setError(err.response.data.errors[0]?.msg || 'Validation failed. Please check your inputs.');
+      } else if (err.response?.data?.message) {
+        setError(err.response.data.message);
+      } else if (err.response?.data?.error) {
+        setError(err.response.data.error);
       } else {
-        setError(err.response?.data?.message || err.response?.data?.error || 'An unexpected error occurred. Please try again.');
+        setError(err.message || 'An unexpected error occurred. Please try again.');
       }
     } finally {
       setLoading(false);

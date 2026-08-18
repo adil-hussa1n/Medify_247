@@ -184,7 +184,7 @@ export const registerDiagnosticCenter = async (req, res) => {
 export const getDiagnosticCenterProfile = async (req, res) => {
   try {
     const { centerId } = req.params;
-    
+
     const diagnosticCenter = await DiagnosticCenter.findById(centerId)
       .populate('userId', 'name email phone')
       .populate('admins', 'name email phone')
@@ -280,7 +280,7 @@ export const updateDiagnosticCenterProfile = async (req, res) => {
         const [closeHour, closeMin] = operatingHours.closingTime.split(':').map(Number);
         const openMinutes = openHour * 60 + openMin;
         const closeMinutes = closeHour * 60 + closeMin;
-        
+
         if (closeMinutes <= openMinutes) {
           return res.status(400).json({
             success: false,
@@ -791,7 +791,7 @@ export const updateOrderStatus = async (req, res) => {
 
     const oldStatus = order.status;
     order.status = status;
-    
+
     if (status === 'completed') {
       order.completedAt = new Date();
     }
@@ -871,7 +871,7 @@ export const uploadReport = async (req, res) => {
 
     // Add or update report
     const existingReportIndex = order.reports.findIndex(r => r.testId.toString() === testId);
-    
+
     if (existingReportIndex >= 0) {
       // Update existing report
       order.reports[existingReportIndex].reportPath = reportPath;
@@ -972,7 +972,7 @@ export const createHomeService = async (req, res) => {
         const [endHour, endMin] = availableTime.endTime.split(':').map(Number);
         const startMinutes = startHour * 60 + startMin;
         const endMinutes = endHour * 60 + endMin;
-        
+
         if (endMinutes <= startMinutes) {
           return res.status(400).json({
             success: false,
@@ -1183,7 +1183,7 @@ export const updateHomeService = async (req, res) => {
         const [endHour, endMin] = availableTime.endTime.split(':').map(Number);
         const startMinutes = startHour * 60 + startMin;
         const endMinutes = endHour * 60 + endMin;
-        
+
         if (endMinutes <= startMinutes) {
           return res.status(400).json({
             success: false,
@@ -1590,7 +1590,7 @@ export const createOrUpdateTestSerialSettings = async (req, res) => {
         const [endHour, endMin] = serialTimeRange.endTime.split(':').map(Number);
         const startMinutes = startHour * 60 + startMin;
         const endMinutes = endHour * 60 + endMin;
-        
+
         if (endMinutes <= startMinutes) {
           return res.status(400).json({
             success: false,
@@ -1613,7 +1613,7 @@ export const createOrUpdateTestSerialSettings = async (req, res) => {
       if (testPrice !== undefined) serialSettings.testPrice = testPrice;
       if (availableDays !== undefined) serialSettings.availableDays = availableDays;
       if (isActive !== undefined) serialSettings.isActive = isActive;
-      
+
       await serialSettings.save();
     } else {
       // Create new settings
@@ -2377,7 +2377,7 @@ export const addDoctorByDiagnosticCenter = async (req, res) => {
         profilePhotoUrl: profilePhotoUrl || '',
         status: 'approved' // Auto-approved when added by diagnostic center admin
       };
-      
+
       doctor = await Doctor.create(doctorData);
 
       // Add doctor to diagnostic center's associated doctors
@@ -2680,7 +2680,7 @@ export const createOrUpdateDoctorSerialSettings = async (req, res) => {
         const [endHour, endMin] = serialTimeRange.endTime.split(':').map(Number);
         const startMinutes = startHour * 60 + startMin;
         const endMinutes = endHour * 60 + endMin;
-        
+
         if (endMinutes <= startMinutes) {
           return res.status(400).json({
             success: false,
@@ -2703,7 +2703,7 @@ export const createOrUpdateDoctorSerialSettings = async (req, res) => {
       if (appointmentPrice !== undefined) serialSettings.appointmentPrice = appointmentPrice;
       if (availableDays !== undefined) serialSettings.availableDays = availableDays;
       if (isActive !== undefined) serialSettings.isActive = isActive;
-      
+
       await serialSettings.save();
     } else {
       // Create new settings
