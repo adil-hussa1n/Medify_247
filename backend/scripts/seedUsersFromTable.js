@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import bcrypt from 'bcryptjs';
 import User from '../src/models/User.model.js';
 import Doctor from '../src/models/Doctor.model.js';
 import Hospital from '../src/models/Hospital.model.js';
@@ -12,7 +11,7 @@ const usersToSeed = [
   {
     role: 'super_admin',
     name: 'Super Admin',
-    email: 'Medify@gmail.com',
+    email: 'medify@gmail.com',
     phone: '01700000001',
     password: 'medify247',
   },
@@ -29,7 +28,7 @@ const usersToSeed = [
   {
     role: 'diagnostic_center_admin',
     name: 'Labaid Diagnostic',
-    email: 'labaidgmail.com', // As specified in user prompt table
+    email: 'labaidgmail.com',
     phone: '01700000003',
     password: 'labaid2026',
     institutionName: 'Labaid Diagnostic Center',
@@ -65,17 +64,16 @@ const seedUsers = async () => {
 
     for (const item of usersToSeed) {
       console.log(`\n👤 Processing [${item.role}]: ${item.email}`);
-      const hashedPassword = await bcrypt.hash(item.password, 12);
+      const cleanEmail = item.email.toLowerCase().trim();
 
       if (item.role === 'doctor') {
-        // Doctor model
-        let doctor = await Doctor.findOne({ email: item.email.toLowerCase().trim() });
+        let doctor = await Doctor.findOne({ email: cleanEmail });
         if (!doctor) {
-          doctor = await Doctor.create({
+          doctor = new Doctor({
             name: item.name,
-            email: item.email.toLowerCase().trim(),
+            email: cleanEmail,
             phone: item.phone,
-            password: hashedPassword,
+            password: item.password, // Plain text here, pre('save') hashes it once!
             specialization: item.specialization,
             medicalLicenseNumber: item.medicalLicenseNumber,
             experienceYears: item.experienceYears,
@@ -90,37 +88,33 @@ const seedUsers = async () => {
               hours: '18:00 - 21:00'
             }
           });
-          console.log(`   ✅ Doctor created: ${item.email} (Password: ${item.password})`);
         } else {
-          doctor.password = hashedPassword;
+          doctor.password = item.password; // Plain text, pre-save will re-hash
           doctor.status = 'approved';
-          await doctor.save();
-          console.log(`   🔄 Doctor updated password & status: ${item.email}`);
         }
+        await doctor.save();
+        console.log(`   ✅ Doctor saved with plain password hashed by model hook: ${item.email}`);
       } else {
-        // User model
-        let user = await User.findOne({ email: item.email.toLowerCase().trim() });
+        let user = await User.findOne({ email: cleanEmail });
         if (!user) {
-          user = await User.create({
+          user = new User({
             name: item.name,
-            email: item.email.toLowerCase().trim(),
+            email: cleanEmail,
             phone: item.phone,
-            password: hashedPassword,
+            password: item.password, // Plain text here, pre('save') hashes it once!
             role: item.role,
             isVerified: true,
             isActive: true
           });
-          console.log(`   ✅ User created: ${item.email} (Role: ${item.role}, Password: ${item.password})`);
         } else {
-          user.password = hashedPassword;
+          user.password = item.password; // Plain text, pre-save will re-hash
           user.role = item.role;
           user.isActive = true;
           user.isVerified = true;
-          await user.save();
-          console.log(`   🔄 User updated password & role: ${item.email}`);
         }
+        await user.save();
+        console.log(`   ✅ User saved with plain password hashed by model hook: ${item.email}`);
 
-        // Create Hospital entity if hospital_admin
         if (item.role === 'hospital_admin') {
           let hospital = await Hospital.findOne({ userId: user._id });
           if (!hospital) {
@@ -132,18 +126,13 @@ const seedUsers = async () => {
               status: 'approved',
               contactInfo: {
                 phone: [item.phone],
-                email: item.email
+                email: cleanEmail
               }
             });
             console.log(`   🏥 Hospital profile created: ${item.institutionName}`);
-          } else {
-            hospital.status = 'approved';
-            await hospital.save();
-            console.log(`   🏥 Hospital profile verified & approved`);
           }
         }
 
-        // Create DiagnosticCenter entity if diagnostic_center_admin
         if (item.role === 'diagnostic_center_admin') {
           let center = await DiagnosticCenter.findOne({ userId: user._id });
           if (!center) {
@@ -151,7 +140,7 @@ const seedUsers = async () => {
               userId: user._id,
               name: item.institutionName,
               phone: item.phone,
-              email: item.email,
+              email: cleanEmail,
               address: item.address,
               ownerName: item.name,
               ownerPhone: item.phone,
@@ -159,17 +148,13 @@ const seedUsers = async () => {
               status: 'approved'
             });
             console.log(`   🔬 Diagnostic Center profile created: ${item.institutionName}`);
-          } else {
-            center.status = 'approved';
-            await center.save();
-            console.log(`   🔬 Diagnostic Center profile verified & approved`);
           }
         }
       }
     }
 
     console.log('\n=========================================');
-    console.log('🎉 All users seeded / updated successfully!');
+    console.log('🎉 Passwords fixed! Double-hashing resolved.');
     console.log('=========================================\n');
     process.exit(0);
   } catch (error) {
