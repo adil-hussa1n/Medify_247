@@ -1414,6 +1414,8 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
   const [dateFormData, setDateFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     totalSerialsPerDay: serialSettings?.totalSerialsPerDay || 20,
+    startTime: serialSettings?.serialTimeRange?.startTime || '09:00',
+    endTime: serialSettings?.serialTimeRange?.endTime || '17:00',
     adminNote: '',
     isEnabled: true
   });
@@ -1425,7 +1427,9 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
     if (serialSettings) {
       setDateFormData(prev => ({
         ...prev,
-        totalSerialsPerDay: serialSettings.totalSerialsPerDay || 20
+        totalSerialsPerDay: serialSettings.totalSerialsPerDay || 20,
+        startTime: serialSettings.serialTimeRange?.startTime || '09:00',
+        endTime: serialSettings.serialTimeRange?.endTime || '17:00'
       }));
       fetchDateSerialSettings();
     }
@@ -1446,6 +1450,8 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
       setDateFormData({
         date: existingSetting.date,
         totalSerialsPerDay: existingSetting.totalSerialsPerDay,
+        startTime: existingSetting.serialTimeRange?.startTime || serialSettings?.serialTimeRange?.startTime || '09:00',
+        endTime: existingSetting.serialTimeRange?.endTime || serialSettings?.serialTimeRange?.endTime || '17:00',
         adminNote: existingSetting.adminNote || '',
         isEnabled: existingSetting.isEnabled
       });
@@ -1456,6 +1462,8 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
         ...prev,
         date: selectedDate,
         totalSerialsPerDay: serialSettings?.totalSerialsPerDay || 20,
+        startTime: serialSettings?.serialTimeRange?.startTime || '09:00',
+        endTime: serialSettings?.serialTimeRange?.endTime || '17:00',
         adminNote: '',
         isEnabled: true
       }));
@@ -1483,20 +1491,8 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
       }
     } catch (err) {
       console.error('Error fetching date serial settings:', err);
-      console.error('Error details:', {
-        status: err.response?.status,
-        message: err.response?.data?.message,
-        url: err.config?.url
-      });
-      
       if (err.response?.status === 404) {
-        // Check if it's a route not found (404) or no data found
-        if (err.response?.data?.message === 'Route not found') {
-          setError('Backend route not found. Please ensure the backend server has been restarted with the latest code.');
-        } else {
-          // No date settings found yet, that's okay
-          setDateSerialSettings([]);
-        }
+        setDateSerialSettings([]);
       } else if (err.response?.status === 401 || err.response?.status === 403) {
         setError('Authentication failed. Please log in again.');
       } else {
@@ -1518,12 +1514,21 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
 
     setSubmitting(true);
     try {
-      const response = await api.post('/doctor/date-serial-settings', {
+      const payload = {
         date: dateFormData.date,
         totalSerialsPerDay: dateFormData.totalSerialsPerDay,
         adminNote: dateFormData.adminNote || null,
         isEnabled: dateFormData.isEnabled
-      });
+      };
+
+      if (dateFormData.startTime && dateFormData.endTime) {
+        payload.serialTimeRange = {
+          startTime: dateFormData.startTime,
+          endTime: dateFormData.endTime
+        };
+      }
+
+      const response = await api.post('/doctor/date-serial-settings', payload);
       
       if (response.data.success) {
         setSuccess('Date serial settings saved successfully!');
@@ -1533,6 +1538,8 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
         setDateFormData({
           date: new Date().toISOString().split('T')[0],
           totalSerialsPerDay: serialSettings?.totalSerialsPerDay || 20,
+          startTime: serialSettings?.serialTimeRange?.startTime || '09:00',
+          endTime: serialSettings?.serialTimeRange?.endTime || '17:00',
           adminNote: '',
           isEnabled: true
         });
@@ -1540,22 +1547,7 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
       }
     } catch (err) {
       console.error('Error saving date serial settings:', err);
-      console.error('Error details:', {
-        status: err.response?.status,
-        message: err.response?.data?.message,
-        url: err.config?.url,
-        data: err.config?.data
-      });
-      
-      if (err.response?.status === 404) {
-        setError('Backend route not found. Please ensure the backend server has been restarted with the latest code.');
-      } else if (err.response?.status === 401 || err.response?.status === 403) {
-        setError('Authentication failed. Please log in again.');
-      } else if (err.response?.status === 400) {
-        setError(err.response?.data?.message || 'Validation failed. Please check your input.');
-      } else {
-        setError(err.response?.data?.message || 'Failed to save date serial settings.');
-      }
+      setError(err.response?.data?.message || 'Failed to save date serial settings.');
       setTimeout(() => setError(''), 5000);
     } finally {
       setSubmitting(false);
@@ -1659,6 +1651,25 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
           </div>
         </div>
 
+        <div className="form-row">
+          <div className="form-group">
+            <label>Start Time (Time Slot)</label>
+            <input
+              type="time"
+              value={dateFormData.startTime}
+              onChange={(e) => setDateFormData({ ...dateFormData, startTime: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label>End Time (Time Slot)</label>
+            <input
+              type="time"
+              value={dateFormData.endTime}
+              onChange={(e) => setDateFormData({ ...dateFormData, endTime: e.target.value })}
+            />
+          </div>
+        </div>
+
         <div className="form-group">
           <label>Admin Note</label>
           <textarea
@@ -1683,21 +1694,23 @@ const DateManagementTab = ({ serialSettings, setSuccess, setError }) => {
 
         <div className="form-actions">
           <button type="submit" className="btn-primary" disabled={submitting}>
-            {submitting ? 'Saving...' : editingDate ? 'Update Date' : 'Add Date'}
+            {submitting ? 'Saving...' : editingDate ? 'Update Date Settings' : 'Add Date'}
           </button>
           {editingDate && (
             <button
               type="button"
+              className="btn-secondary"
               onClick={() => {
                 setEditingDate(null);
                 setDateFormData({
                   date: new Date().toISOString().split('T')[0],
                   totalSerialsPerDay: serialSettings?.totalSerialsPerDay || 20,
+                  startTime: serialSettings?.serialTimeRange?.startTime || '09:00',
+                  endTime: serialSettings?.serialTimeRange?.endTime || '17:00',
                   adminNote: '',
                   isEnabled: true
                 });
               }}
-              className="btn-secondary"
             >
               Cancel
             </button>
