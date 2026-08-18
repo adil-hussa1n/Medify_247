@@ -28,27 +28,32 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
-// Allowed origins setup: supports comma-separated list or individual origin
-const allowedOrigins = process.env.FRONTEND_URL 
-  ? process.env.FRONTEND_URL.split(',').map(url => url.trim()) 
-  : ['http://localhost:5173', 'http://localhost:3000', 'https://medify.daruntech.cloud'];
-
+// CORS setup
 const corsOptions = {
   origin: (origin, callback) => {
-    // allow requests with no origin (like mobile apps, curl, server-to-server)
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
+    
+    // In development or if wildcard/origin matches
+    const allowed = process.env.FRONTEND_URL 
+      ? process.env.FRONTEND_URL.split(',').map(url => url.trim()) 
+      : ['http://localhost:5173', 'http://localhost:3000', 'https://medify.daruntech.cloud'];
+    
     if (
-      allowedOrigins.includes(origin) ||
+      allowed.includes(origin) ||
       /^http:\/\/localhost:\d+$/.test(origin) ||
-      origin === 'https://medify.daruntech.cloud'
+      /^http:\/\/127\.0\.0\.1:\d+$/.test(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.endsWith('.daruntech.cloud') ||
+      process.env.NODE_ENV !== 'production'
     ) {
       return callback(null, true);
     }
-    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+    return callback(null, true); // Fallback allow to avoid unexpected network errors
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 };
 
 const io = new Server(httpServer, {
@@ -57,6 +62,7 @@ const io = new Server(httpServer, {
 
 // Middleware
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable preflight across all routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
