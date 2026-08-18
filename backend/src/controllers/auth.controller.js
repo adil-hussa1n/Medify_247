@@ -105,9 +105,10 @@ export const login = async (req, res) => {
     }
 
     const { email, password } = req.body;
+    const cleanEmail = email ? email.toLowerCase().trim() : '';
 
     // First check if it's a doctor (doctors are stored ONLY in doctors table)
-    const doctor = await Doctor.findOne({ email }).select('+password');
+    const doctor = await Doctor.findOne({ email: cleanEmail }).select('+password');
 
     if (doctor) {
       // Doctor login - authenticate from doctors table
@@ -167,7 +168,7 @@ export const login = async (req, res) => {
     }
 
     // Not a doctor - check User table (for patients, hospital admins, super admins)
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: cleanEmail }).select('+password');
 
     if (!user) {
       return res.status(401).json({
