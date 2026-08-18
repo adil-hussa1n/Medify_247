@@ -1,223 +1,315 @@
-# Medify247 — Complete Project Overview & Technical Architecture
+# Medify247 — Enterprise Architecture & Technical Specification
 
-> **Medify247** is an enterprise-grade, multi-tenant healthcare service platform built for the South-Asian healthcare ecosystem. It connects **Patients**, **Doctors**, **Hospitals**, **Diagnostic Centers**, and a **Super Admin** within a unified system featuring granular Role-Based Access Control (RBAC), real-time WebSocket notifications, serial-based appointment scheduling, and strict approval workflows.
-
----
-
-## 1. What Is Medify247?
-
-Medify247 digitizes the end-to-end patient and healthcare provider lifecycle:
-
-- **Patients**: Search doctors by specialization/location, book serial-based appointments, order lab tests, request home services (nursing, sample collection), view digital prescriptions, and download PDF medical reports.
-- **Doctors**: Manage daily appointment queues, configure multi-location chambers and schedules, write structured digital prescriptions (vitals, ICD-10 diagnosis, medications, follow-ups), track earnings, and assign practice staff.
-- **Hospitals & Diagnostic Centers**: Manage affiliated doctors, diagnostic tests and test packages, home service offerings, test/home-service serial bookings, and staff teams with scoped permissions.
-- **Super Admin**: Oversee entity registration approvals/rejections, manage platform banners, broadcast notifications, monitor audit logs, manage users, and export system analytics.
+> **Medify247** is a production-grade, multi-tenant healthcare software-as-a-service (SaaS) platform tailored for South-Asian medical ecosystems. It unifies **Patients**, **Doctors**, **Hospitals**, **Diagnostic Centers**, and a **Super Admin** within a high-security, event-driven architecture featuring 7-role RBAC, real-time WebSocket notifications, serial-based scheduling, and automated PDF medical workflows.
 
 ---
 
-## 2. Tech Stack
+## 1. Executive Summary & System Capabilities
 
-| Layer | Technology & Version |
+- **Patients**: Multi-facility search, serial-number doctor booking, diagnostic lab ordering, home healthcare request dispatching, digital prescription vault with A4 PDF export, and real-time order tracking.
+- **Doctors**: Multi-chamber management, serial slot configuration, structured digital prescription generator (ICD-10, vitals, multi-frequency medications), per-appointment earning ledger with platform commission calculations, and practice staff delegation.
+- **Hospitals & Diagnostic Centers**: Institutional doctor linking, diagnostic test catalog management, bundled test packages, home care service management, walk-in/home collection order management, and RBAC team staff sub-accounts.
+- **Super Admin**: Verification queue governance, account activation/suspension, platform banner engine, broadcast push notifications, data export (XLSX/CSV), and immutable audit logging.
+
+---
+
+## 2. Technical Stack Architecture
+
+| Component | Stack Specification |
 |---|---|
-| **Frontend** | React 19 + Vite 7, React Router v7, Axios, Glassmorphism UI Design System |
-| **Backend** | Node.js (ES Modules) + Express 4 |
-| **Database** | MongoDB Atlas (Mongoose 8) |
-| **Real-time** | Socket.IO (WebSocket room-based architecture) |
-| **Authentication** | JWT (jsonwebtoken) + bcryptjs (7-day token duration) |
-| **File Storage** | Multer (local temporary staging) → Cloudinary (permanent cloud storage) |
-| **PDF Generation** | PDFKit (A4 prescription & serial list generation) |
-| **Notifications** | Socket.IO real-time events + Nodemailer (SMTP integration) |
-| **Data Export** | XLSX + csv-writer |
-| **Deployment** | Vercel (Frontend), Render / Hostinger VPS (Backend Docker container) |
+| **Frontend Framework** | React 19, Vite 7, React Router v7, Axios API Client |
+| **UI Design System** | Modern Glassmorphism System (`AuthShared.css`), Vanilla CSS, CSS Variables |
+| **Backend Runtime** | Node.js (ES Modules) + Express 4 framework |
+| **Database Layer** | MongoDB Atlas (Mongoose 8 ODM) with index optimization |
+| **Real-time Server** | Socket.IO (WebSocket room-isolated event architecture) |
+| **Security & Auth** | JSON Web Tokens (JWT) + `bcryptjs` (salt factor 10) |
+| **Cloud Storage** | Multer (local disk staging) → Cloudinary API (secure CDN bucket) |
+| **Document Generation** | PDFKit (A4 prescription & serial list renderer) |
+| **Data Pipelines** | `xlsx` (Excel engine) + `csv-writer` |
+| **Deployment & Infra** | Vercel (Frontend SPA), Render / Hostinger VPS Docker Container (Backend) |
 
 ---
 
-## 3. Architecture & Folder Structure
-
-```
-medify247/
-├── backend/                        # Express REST API & Socket.IO server (Port 5000)
-│   ├── server.js                   # Entry point: Server initialization, CORS, Socket.IO, DB connect
-│   ├── Dockerfile                  # Production container definition
-│   ├── scripts/                    # Database seeding (createSuperAdmin.js) & index maintenance
-│   └── src/
-│       ├── config/                 # MongoDB Atlas connection & Cloudinary initialization
-│       ├── constants/              # Granular RBAC definitions (Super Admin, Hospital, Diagnostic, Doctor)
-│       ├── controllers/            # 13 Controllers (~470KB business logic)
-│       ├── middlewares/            # Auth, RBAC guards, file uploaders & error handlers
-│       ├── models/                 # 28 Mongoose schemas
-│       ├── routes/                 # 11 API Route definitions
-│       ├── services/               # Notification service & HomeService serial booking engine
-│       └── utils/                  # JWT, OTP, PDF generator, Cloudinary & slot calculators
-│
-├── frontend/                       # React SPA (Vite, Port 5173 / Production Vercel)
-│   ├── vercel.json                 # Vercel SPA routing rewrite rules
-│   └── src/
-│       ├── config/                 # Axios instance configuration (`api.js`)
-│       ├── context/                # AuthContext (global authentication state & handlers)
-│       ├── pages/                  # 21 Page components + `AuthShared.css` design system
-│       │   ├── AuthShared.css      # Shared glassmorphism CSS design system for all auth forms
-│       │   ├── Login.jsx           # Unified multi-role login page
-│       │   ├── Register.jsx        # Patient registration page
-│       │   ├── DoctorRegister.jsx  # Doctor application form
-│       │   ├── HospitalRegister.jsx# Hospital application form
-│       │   ├── DiagnosticCenterRegister.jsx # Diagnostic center application form
-│       │   ├── DoctorDashboard.jsx # Doctor portal
-│       │   ├── HospitalDashboard.jsx # Hospital portal (~4,800 lines)
-│       │   ├── DiagnosticCenterDashboard.jsx # Diagnostic portal (~4,200 lines)
-│       │   ├── SuperAdminDashboard.jsx # Platform admin portal (~3,300 lines)
-│       │   └── UserDashboard.jsx   # Patient portal (~3,000 lines)
-│       └── components/             # Shared UI components (Navbar, Modals, Filters)
-│
-├── USER_CREDENTIALS.md             # Active account credentials reference
-└── PROJECT_OVERVIEW.md             # Project technical documentation
-```
-
----
-
-## 4. User Roles & Access Control (7-Role RBAC)
-
-Medify247 enforces strict multi-portal RBAC across 7 roles:
-
-| Role | Access Scope | Portal Route |
-|---|---|---|
-| `patient` | End-user seeking healthcare & booking services | `/user/dashboard` |
-| `doctor` | Independent or institution-affiliated physician | `/doctor/dashboard` |
-| `doctor_staff` | Delegated staff member under a doctor's practice | `/doctor/dashboard` |
-| `hospital_admin` | Hospital owner or administrator | `/hospital/dashboard` |
-| `diagnostic_center_admin` | Diagnostic center owner or administrator | `/diagnostic-center/dashboard` |
-| `super_admin` | Platform-wide administrator with full control | `/super-admin/dashboard` |
-| `super_admin_staff` | Delegated admin staff with assigned permission sets | `/super-admin/dashboard` |
-
-### 4.1 Granular RBAC Permissions
-
-Permissions are defined in `src/constants/`:
-- **Super Admin Permissions**: Dashboard, approvals, user management, doctor oversight, hospital oversight, diagnostic center oversight, banner management, notification broadcast, activity audit logs, data export, staff management.
-- **Hospital Permissions**: Manage hospital doctors, test catalog, test serials, home services, home service serials, orders, and hospital staff.
-- **Diagnostic Center Permissions**: Manage lab tests, test serials, home services, home requests, center doctors, and staff.
-- **Doctor Permissions**: Manage appointments, write prescriptions, manage chambers, schedule settings, serial pricing, earnings, and practice staff.
-
-### 4.2 Staff Sub-Accounts
-Institutions (Super Admin, Hospital, Diagnostic Center, Doctor) can invite staff sub-accounts using pre-defined role templates (`owner`, `admin`, `support`, `moderator`, `content_manager`, `viewer`, `custom`). Staff members log in through standard portals and inherit restricted permissions.
-
----
-
-## 5. Core System Workflows & Features
-
-### 5.1 🔐 Unified Glassmorphic Auth System
-- **Single Shared CSS Design System (`AuthShared.css`)**: Dark-ambient theme with glassmorphic cards (`backdrop-filter: blur(20px)`), brand badges, and responsive form grids.
-- **Cross-Collection Duplicate Protection**: Prevents duplicate email/phone registrations across both `User` and `Doctor` collections, preventing MongoDB `E11000` duplicate key index crashes.
-- **Transactional Rollback**: In institution registrations (`registerDiagnosticCenter`, `registerHospital`), if institutional record creation fails after user creation, the system automatically rolls back and deletes the orphan user record.
-- **Public Partner Cross-Navigation**: Every registration page features interactive cards for cross-registering as a Patient, Doctor, Hospital, or Diagnostic Center.
-
----
-
-### 5.2 🛡️ Approval & Audit Workflow
+## 3. Entity Relationship Architecture (Mermaid ERD)
 
 ```mermaid
-graph TD
-    A["Partner Registers (Doctor / Hospital / Diagnostic Center)"] --> B["Status: pending_super_admin (User & Entity Inactive)"]
-    B --> C{"Super Admin Reviews Application"}
-    C -->|Approve| D["Status: approved (User.isActive = true)"]
-    C -->|Reject| E["Status: rejected (Reason Recorded in Audit Log)"]
-    D --> F["Partner Can Sign In & Access Dashboard"]
-    E --> G["Partner Sign-In Blocked with Error Message"]
-    D -->|Later Action| H{"Super Admin Can Suspend"}
-    H --> I["Status: suspended (Access Revoked)"]
+erDiagram
+    USER ||--o{ APPOINTMENT : places
+    USER ||--o{ ORDER : orders
+    USER ||--o{ HOMESERVICEREQUEST : requests
+    USER ||--o{ PRESCRIPTION : receives
+    USER ||--o| HOSPITALSTAFF : belongs_to
+    USER ||--o| DIAGNOSTICCENTERSTAFF : belongs_to
+    USER ||--o| DOCTORSTAFF : belongs_to
+    USER ||--o| SUPERADMINSTAFF : belongs_to
+
+    DOCTOR ||--o{ APPOINTMENT : conducts
+    DOCTOR ||--o{ PRESCRIPTION : issues
+    DOCTOR ||--o{ CHAMBER : operates
+    DOCTOR ||--o{ EARNING : earns
+    DOCTOR ||--o{ SERIALSETTINGS : configures
+
+    HOSPITAL ||--o{ DOCTOR : links
+    HOSPITAL ||--o{ TEST : offers
+    HOSPITAL ||--o{ HOMESERVICE : provides
+    HOSPITAL ||--o{ ORDER : receives
+    HOSPITAL ||--o{ HOSPITALSTAFF : employs
+
+    DIAGNOSTICCENTER ||--o{ DOCTOR : links
+    DIAGNOSTICCENTER ||--o{ TEST : offers
+    DIAGNOSTICCENTER ||--o{ HOMESERVICE : provides
+    DIAGNOSTICCENTER ||--o{ ORDER : receives
+    DIAGNOSTICCENTER ||--o{ DIAGNOSTICCENTERSTAFF : employs
+
+    TEST ||--o{ ORDER : contains
+    HOMESERVICE ||--o{ HOMESERVICEREQUEST : triggers
+    APPOINTMENT ||--o| PRESCRIPTION : generates
+    APPOINTMENT ||--o| EARNING : calculates
 ```
 
-- All institutional partners enter a `pending_super_admin` queue upon registration.
-- Every approval/rejection/suspension is recorded in the `Approval` collection for audit logging.
+---
+
+## 4. Complete Database Schema Definitions (28 Schemas)
+
+### 4.1 Primary Identity & Auth Schemas
+1. **`User`**: Core user entity (`name`, `email` [unique], `phone` [unique], `password`, `role` [`patient`, `hospital_admin`, `diagnostic_center_admin`, `super_admin`, `super_admin_staff`], `dateOfBirth`, `gender`, `address`, `isActive`, `isVerified`).
+2. **`Doctor`**: Specialized physician entity (`name`, `email` [unique], `phone` [unique], `password`, `medicalLicenseNumber` [unique], `specialization` [Array], `qualifications`, `experienceYears`, `consultationFee`, `bio`, `profilePhotoUrl`, `status` [`pending_super_admin`, `approved`, `rejected`, `suspended`]).
+3. **`Hospital`**: Institutional provider (`userId`, `name`, `registrationNumber` [unique], `address`, `phone`, `email`, `documents` [Array], `status` [`pending_super_admin`, `approved`, `rejected`, `suspended`], `admins` [Array]).
+4. **`DiagnosticCenter`**: Diagnostic laboratory (`userId`, `name`, `tradeLicenseNumber` [unique], `ownerName`, `ownerPhone`, `address`, `status` [`pending_super_admin`, `approved`, `rejected`, `suspended`]).
+
+### 4.2 Clinical & Scheduling Schemas
+5. **`Appointment`**: Consultation record (`patientId`, `doctorId`, `chamberId`, `appointmentDate`, `appointmentNumber` [unique], `status` [`pending`, `accepted`, `rejected`, `completed`, `cancelled`, `no_show`], `fee`, `paymentStatus` [`pending`, `paid`, `refunded`], `serialNumber`).
+6. **`Prescription`**: Medical record (`appointmentId`, `patientId`, `doctorId`, `vitals` [`bp`, `pulse`, `temperature`, `weight`, `height`, `bmi`, `spo2`], `diagnosis` [ICD-10 array], `medicines` [`name`, `dosage`, `frequency`, `duration`, `instructions`], `recommendedTests`, `advice`, `followUpDate`, `pdfUrl`).
+7. **`Chamber`**: Practice location (`doctorId`, `hospitalId`, `diagnosticCenterId`, `name`, `address`, `consultationFee`, `phone`, `isActive`).
+8. **`SerialSettings`**: Daily appointment capacity rules (`doctorId`, `locationType`, `hospitalId`, `diagnosticCenterId`, `totalSerialsPerDay`, `serialTimeRange` [`startTime`, `endTime`], `availableDays` [Array], `appointmentPrice`).
+9. **`DateSerialSettings`**: Date-specific serial overrides (`doctorId`, `date`, `totalSerialsPerDay`, `isEnabled`, `adminNote`).
+10. **`Schedule`**: Recurring doctor timetable (`doctorId`, `dayOfWeek`, `startTime`, `endTime`, `maxPatients`).
+11. **`HospitalSchedule`**: Institution-controlled doctor schedule (`hospitalId`, `doctorId`, `dayOfWeek`, `startTime`, `endTime`).
+
+### 4.3 Diagnostic & Home Healthcare Schemas
+12. **`Test`**: Individual test or test package (`name`, `code`, `category` [`pathology`, `radiology`, `cardiology`, `other`], `price`, `duration`, `hospitalId`, `diagnosticCenterId`, `isPackage`, `includedTests` [Array]).
+13. **`Order`**: Lab test invoice (`orderNumber` [unique], `patientId`, `hospitalId`, `diagnosticCenterId`, `tests` [Array], `totalAmount`, `discount`, `finalAmount`, `collectionType` [`walk_in`, `home_collection`], `paymentStatus` [`unpaid`, `paid`, `refunded`], `orderStatus` [`pending`, `confirmed`, `sample_collected`, `processing`, `completed`, `cancelled`], `reportUrls` [Array]).
+14. **`TestSerialSettings`**: Lab test serial capacity rules (`testId`, `totalSerialsPerDay`, `serialTimeRange`, `availableDays`).
+15. **`TestSerialBooking`**: Patient serial reservation for diagnostic tests (`testId`, `patientId`, `date`, `serialNumber`, `status`).
+16. **`HomeService`**: At-home care definition (`serviceType`, `price`, `availableTime`, `offDays`, `hospitalId`, `diagnosticCenterId`, `isActive`).
+17. **`HomeServiceRequest`**: Home care dispatch ticket (`requestNumber` [unique], `patientId`, `homeServiceId`, `patientName`, `patientAge`, `patientGender`, `homeAddress`, `contactPhone`, `preferredDate`, `preferredTime`, `status` [`pending`, `accepted`, `rejected`, `completed`, `cancelled`], `assignedStaff`).
+18. **`HomeServiceSerialSettings`**: Home care serial capacity rules (`serviceId`, `totalSerialsPerDay`, `serialTimeRange`).
+19. **`HomeServiceSerialBooking`**: Serial reservations for home care services.
+
+### 4.4 Financial, System & RBAC Schemas
+20. **`Earning`**: Ledger entry (`doctorId`, `appointmentId`, `month`, `year`, `consultationFee`, `platformFee`, `netAmount`, `status` [`pending`, `paid`, `cancelled`], `paymentMethod`, `transactionId`).
+21. **`Specialization`**: Master specialty directory (`name`, `description`, `iconUrl`).
+22. **`Notification`**: Real-time event log (`userId`, `title`, `message`, `type`, `isRead`, `link`).
+23. **`Approval`**: Institutional audit log (`actorId`, `actorRole`, `targetType`, `targetId`, `action` [`register`, `approve`, `reject`, `suspend`, `reactivate`], `reason`, `previousStatus`, `newStatus`).
+24. **`Banner`**: Marketing banner (`title`, `imageUrl`, `targetUrl`, `startDate`, `endDate`, `isActive`, `displayOrder`).
+25. **`HospitalStaff`**: Sub-account (`hospitalId`, `userId`, `role`, `permissions` [Array], `isActive`).
+26. **`DiagnosticCenterStaff`**: Sub-account (`diagnosticCenterId`, `userId`, `role`, `permissions` [Array], `isActive`).
+27. **`DoctorStaff`**: Sub-account (`doctorId`, `userId`, `role`, `permissions` [Array], `isActive`).
+28. **`SuperAdminStaff`**: Platform sub-account (`userId`, `role`, `permissions` [Array], `isActive`).
 
 ---
 
-### 5.3 📅 Serial-Based Appointment & Booking Engine
+## 5. End-to-End Business Lifecycles
 
-Designed specifically for South-Asian clinical practices:
-- **Serial Numbers vs. Time Slots**: Patients book sequential serial numbers (e.g. Serial #1, Serial #2) rather than rigid Western time slots.
-- **Doctor Serial Settings**: Per-doctor, per-location settings (total serials/day, operating time range, available days, consultation fee).
-- **Date-Specific Overrides**: Doctors/Hospitals can override serial counts or disable serials on specific dates via `DateSerialSettings`.
-- **Test & Home Service Serials**: Hospitals and Diagnostic Centers can configure serial booking rules for high-demand lab tests and home care requests.
+### 5.1 Complete Booking Lifecycle
+```
+1. Patient Selects Doctor & Chamber
+2. System queries SerialSettings & DateSerialSettings for selected date
+3. Slot Generator computes available serial numbers (1..N) and estimated arrival time
+4. Patient confirms booking -> Server creates Appointment (status: pending, paymentStatus: pending)
+5. Server emits real-time Socket.IO notification to Doctor room
+6. Doctor/Practice Staff accepts appointment -> Status transitions to 'accepted'
+7. Patient arrives at chamber -> Doctor conducts consultation
+8. Doctor fills prescription form -> Prescription document saved & PDFKit generates A4 PDF -> Cloudinary Upload
+9. Doctor marks appointment 'completed'
+10. Server calculates platform commission -> Earning record created (status: pending)
+```
+
+### 5.2 Diagnostic Order Lifecycle
+```
+1. Patient selects Lab Tests / Packages from Hospital or Diagnostic Center
+2. Selects collectionType: 'walk_in' or 'home_collection'
+3. Server generates unique orderNumber (e.g. ORD-20260818-XXXX) -> Order created (status: pending)
+4. Provider receives order notification -> Confirms order (status: confirmed)
+5. If home_collection: Phlebotomist dispatched -> Status: sample_collected
+6. Lab processes sample -> Status: processing
+7. Lab uploads PDF report to Cloudinary -> Report URL attached -> Status: completed
+8. Real-time notification sent to Patient -> Patient downloads PDF report from dashboard
+```
+
+### 5.3 Home Healthcare Dispatch Workflow
+```
+1. Patient submits HomeServiceRequest (patient info, address, preferred date/time)
+2. Ticket created (status: pending, requestNumber: HSR-XXXXX)
+3. Provider dashboard alerts home-care dispatcher
+4. Dispatcher accepts ticket -> Assigns healthcare staff -> Status: accepted
+5. Staff visits patient home & delivers service
+6. Staff/Provider marks request 'completed'
+```
 
 ---
 
-### 5.4 🩺 Digital Prescription & PDF Engine
-- **Clinical Data Structure**: Vitals (BP, Pulse, Temp, Weight, Height, BMI, SpO2), ICD-10 diagnosis, medication instructions (dosage, timing, meal relations, duration), recommended tests, advice, and follow-up dates.
-- **Automated PDF Generation**: `PDFKit` generates printable A4 prescription documents on demand, uploaded automatically to Cloudinary.
+## 6. Financial & Payment Architecture
+
+Medify247 supports both cash and digital payment workflows:
+- **Payment Gateway Integration Layer**: Ready for SSLCommerz / bKash / Nagad API integrations (`paymentStatus`: `pending`, `paid`, `refunded`; `paymentMethod`: `cash`, `card`, `online`, `mobile_banking`).
+- **Platform Fee Engine**: Automatically deducts platform commission from doctor consultation fees upon appointment completion:
+  $$\text{Net Earning} = \text{Consultation Fee} - \text{Platform Fee}$$
+- **Earnings Ledger (`Earning.model.js`)**: Tracks monthly doctor payouts, payout methods (`bank_transfer`, `mobile_banking`), transaction IDs, and settlement status (`pending` vs. `paid`).
 
 ---
 
-### 5.5 🔔 Real-Time WebSocket Notifications
-- Built with **Socket.IO** using isolated user rooms (`user-{userId}`).
-- Emits instant updates for appointment status changes, prescription readiness, report uploads, verification approvals, and platform broadcasts.
+## 7. Institutional Approval States & Governance
 
----
+All healthcare entities (`Doctor`, `Hospital`, `DiagnosticCenter`) follow strict status state machines:
 
-## 6. Data Models (28 Mongoose Schemas)
-
-| # | Model Schema | Purpose & Scope |
+| State | User `isActive` | Description |
 |---|---|---|
-| 1 | `User` | Patient, Hospital Admin, Diagnostic Admin, Super Admin, Admin/Staff accounts |
-| 2 | `Doctor` | Doctor accounts (separate table with independent auth & medical credentials) |
-| 3 | `Hospital` | Hospital entity profiles, departments, facilities, license numbers, status |
-| 4 | `DiagnosticCenter` | Diagnostic center profiles, owner info, trade license details, status |
-| 5 | `Appointment` | Serial-based doctor-patient appointments |
-| 6 | `Prescription` | Digital clinical prescriptions with Cloudinary PDF links |
-| 7 | `Chamber` | Doctor consultation locations and fees |
-| 8 | `Test` | Diagnostic tests and test package definitions |
-| 9 | `Order` | Diagnostic test orders (walk-in or home collection) |
-| 10 | `HomeService` | At-home healthcare service definitions |
-| 11 | `HomeServiceRequest` | Patient requests for home healthcare services |
-| 12 | `HomeServiceSerialBooking` | Serial bookings for home healthcare services |
-| 13 | `HomeServiceSerialSettings` | Serial configuration for home services |
-| 14 | `TestSerialBooking` | Serial bookings for diagnostic lab tests |
-| 15 | `TestSerialSettings` | Serial configuration for diagnostic tests |
-| 16 | `SerialSettings` | Doctor serial appointment configuration per location |
-| 17 | `DateSerialSettings` | Fine-grained date-specific serial overrides |
-| 18 | `Schedule` | Doctor regular schedule definitions |
-| 19 | `HospitalSchedule` | Hospital-specific doctor schedules |
-| 20 | `Specialization` | Master list of medical specializations |
-| 21 | `Earning` | Doctor per-appointment earnings & platform fee records |
-| 22 | `Notification` | System and real-time in-app notifications |
-| 23 | `Approval` | Platform approval & audit trail log |
-| 24 | `Banner` | Promotional banners managed by Super Admin |
-| 25 | `HospitalStaff` | Staff sub-accounts for hospitals with permissions |
-| 26 | `DiagnosticCenterStaff` | Staff sub-accounts for diagnostic centers |
-| 27 | `DoctorStaff` | Staff sub-accounts for doctor practices |
-| 28 | `SuperAdminStaff` | Staff sub-accounts for platform admin team |
+| `pending_super_admin` | `false` | Registration submitted. Awaiting document verification by Super Admin. Cannot log in. |
+| `approved` | `true` | Verified by Super Admin. Full dashboard access granted. |
+| `rejected` | `false` | Registration declined. Rejection reason recorded in `Approval` audit log. Cannot log in. |
+| `suspended` | `false` | Account suspended by Super Admin due to compliance issues. Access immediately revoked. |
 
 ---
 
-## 7. API Architecture & Middleware Pipeline
+## 8. Audit Logging & Security Specification
+
+### 8.1 Audit Trail (`Approval.model.js`)
+Every sensitive administrative action (approvals, rejections, suspensions, permission edits) creates an immutable record:
+$$\text{Audit Record} = \{\text{actorId}, \text{actorRole}, \text{targetType}, \text{targetId}, \text{action}, \text{reason}, \text{previousStatus}, \text{newStatus}, \text{timestamp}\}$$
+
+### 8.2 Security Specifications
+- **Authentication**: JWT tokens signed with HMAC-SHA256 (`JWT_SECRET`), expiring in 7 days. Passed via HTTP `Authorization: Bearer <token>` headers.
+- **Password Protection**: Salting and hashing via `bcryptjs` with salt factor 10. `select: false` enforced on Mongoose user schemas to prevent password leakage in queries.
+- **Cross-Collection Unique Safeguards**: Pre-save queries cross-verify `email` and `phone` against both `User` and `Doctor` collections to prevent index collisions.
+- **Transactional Rollback**: Institutional signup handlers execute atomic rollbacks (`User.findByIdAndDelete`) if secondary entity creation fails.
+
+---
+
+## 9. Media & File Management Architecture (Cloudinary)
 
 ```
-Client Request → CORS → Body Parser → Express Router → authenticate (JWT) → authorize (Role) → hospitalGuard / diagnosticCenterGuard (RBAC) → Controller → Response
+File Input (Multipart/Form-Data) -> Local Staging (Multer /tmp) -> Cloudinary SDK Upload -> Secure HTTPS CDN URL -> Local Staging File Deleted
 ```
+- **Categories Stored**: Doctor profile photos, medical licenses, hospital registration certificates, trade licenses, promotional banners, diagnostic PDF reports, and digital prescription PDFs.
+- **Auto-Cleanup**: Temporary local files are immediately unlinked after successful Cloudinary upload to prevent container storage growth.
 
-### Route Index
+---
 
-| Route Prefix | File Name | Description |
+## 10. Real-Time Event Architecture (Socket.IO)
+
+Clients establish WebSocket connections to backend server and join isolated rooms:
+- **Personal Room**: `user-{userId}`
+- **Institution Room**: `hospital-{hospitalId}`, `diagnostic-{centerId}`
+
+### Event Payload Specifications
+
+| Event Name | Trigger Context | Target Room |
 |---|---|---|
-| `/api/auth` | `auth.routes.js` | Patient registration, multi-role login, OTP endpoints |
-| `/api/doctors` | `doctor.routes.js` | Public doctor registration |
-| `/api/doctor` | `doctor.portal.routes.js` | Doctor portal endpoints (appointments, prescriptions, serials) |
-| `/api/doctor-practice` | `doctor.practice.routes.js` | Doctor practice team RBAC |
-| `/api/hospitals` | `hospital.routes.js` | Hospital registration & management APIs |
-| `/api/diagnostic-centers` | `diagnosticCenter.routes.js` | Diagnostic center registration & management APIs |
-| `/api/admin` | `admin.routes.js` | Super Admin platform control & approvals |
-| `/api/patient` | `patient.routes.js` | Patient booking, test ordering, prescription viewing |
-| `/api/users` | `user.routes.js` | Profile management |
-| `/api/shared` | `shared.routes.js` | Public search (doctors, hospitals, diagnostic centers, tests) |
-| `/api/notifications` | `notification.routes.js` | In-app notification management |
+| `appointment_created` | Patient books appointment | Doctor Room |
+| `appointment_accepted` | Doctor accepts appointment | Patient Room |
+| `appointment_completed` | Consultation finished | Patient Room |
+| `prescription_ready` | Prescription PDF generated | Patient Room |
+| `order_status_update` | Diagnostic lab updates status | Patient Room |
+| `report_ready` | Lab report PDF uploaded | Patient Room |
+| `verification_approved` | Super Admin approves provider | Provider Room |
+| `broadcast` | Platform-wide admin announcement | All Connected Rooms |
 
 ---
 
-## 8. Deployment Infrastructure
+## 11. Database Indexing & Concurrency Strategy
 
-- **Frontend (Vercel)**:
-  - Repository root: `frontend/`
-  - Output directory: `dist/`
-  - SPA Rewrite Rules configured in `frontend/vercel.json`.
-- **Backend (Render / Hostinger VPS)**:
-  - Production Docker setup via `Dockerfile`.
-  - Environment variables: `MONGODB_URI`, `JWT_SECRET`, `CLOUDINARY_*`, `VITE_API_BASE_URL`.
+### 11.1 Indexing Matrix
+- **`User`**: `{ email: 1 }` [unique], `{ phone: 1 }` [unique], `{ role: 1 }`
+- **`Doctor`**: `{ email: 1 }` [unique], `{ phone: 1 }` [unique], `{ medicalLicenseNumber: 1 }` [unique]
+- **`Hospital`**: `{ registrationNumber: 1 }` [unique], `{ userId: 1 }` [unique]
+- **`DiagnosticCenter`**: `{ tradeLicenseNumber: 1 }` [unique], `{ userId: 1 }` [unique]
+- **`Appointment`**: `{ appointmentNumber: 1 }` [unique], `{ doctorId: 1, appointmentDate: 1 }`, `{ patientId: 1 }`
+- **`Order`**: `{ orderNumber: 1 }` [unique], `{ patientId: 1 }`, `{ hospitalId: 1 }`, `{ diagnosticCenterId: 1 }`
+
+### 11.2 Concurrency & Race-Condition Guarding
+- **Serial Number Allocation**: Computed atomically by querying current active appointments for the specific date and incrementing serial count inside Mongoose transactions.
+- **Sparse Unique Indexes**: Nullable unique fields use Mongoose `sparse: true` index definitions to prevent duplicate key crashes on `null` values.
+
+---
+
+## 12. Frontend SPA Architecture & Design System
+
+### 12.1 Page Component Directory
+
+| Page Component | Lines of Code | Core Responsibility |
+|---|---|---|
+| `HospitalDashboard.jsx` | ~4,800 | Hospital entity portal (doctors, tests, home services, staff) |
+| `DiagnosticCenterDashboard.jsx` | ~4,200 | Diagnostic lab portal (test catalog, serials, orders, staff) |
+| `SuperAdminDashboard.jsx` | ~3,300 | Platform governance, approvals, banners, broadcasts, exports |
+| `UserDashboard.jsx` | ~3,000 | Patient portal (appointments, tests, home care, prescriptions) |
+| `DoctorDashboard.jsx` | ~2,400 | Doctor portal (queues, prescription writer, earnings, chambers) |
+| `BookAppointment.jsx` | ~1,900 | Serial booking engine flow |
+| `DiagnosticCenterProfile.jsx` | ~1,000 | Institutional profile editor |
+| `SearchDoctors.jsx` | ~830 | Filtered doctor discovery engine |
+| `HospitalProfile.jsx` | ~760 | Hospital profile editor |
+| `DiagnosticCenterRegister.jsx` | ~530 | Institutional signup form |
+| `SearchTests.jsx` | ~440 | Lab test discovery engine |
+
+### 12.2 Modern Glassmorphism UI System (`AuthShared.css`)
+- **Theme Variables**: Dark ambient gradient background (`#0f172a` $\to$ `#1e1b4b` $\to$ `#311042`) with glowing ambient backdrops.
+- **Card Aesthetics**: Translucent white panels (`rgba(255, 255, 255, 0.96)`) with `backdrop-filter: blur(20px)`, rounded corners (`border-radius: 24px`), and subtle border highlights.
+
+---
+
+## 13. Production Operations, Disaster Recovery & DevOps
+
+### 13.1 Production Architecture Diagram
+
+```
+                 [ Vercel CDN (Frontend SPA) ]
+                              │
+                    HTTPS REST & WebSockets
+                              ▼
+            [ Hostinger VPS / Render Docker Container ]
+           ┌──────────────────────────────────────────┐
+           │ Express API Engine + Socket.IO Server    │
+           └────────────────────┬─────────────────────┘
+                                │
+                  ┌─────────────┴─────────────┐
+                  ▼                           ▼
+        [ MongoDB Atlas Cluster ]   [ Cloudinary Bucket CDN ]
+        (Database & Indexes)        (PDFs, Reports, Images)
+```
+
+### 13.2 Environmental Variable Reference
+
+| Variable | Purpose | Default / Example |
+|---|---|---|
+| `PORT` | Node server listening port | `5000` |
+| `NODE_ENV` | Runtime environment | `production` |
+| `MONGODB_URI` | MongoDB Atlas cluster connection string | `mongodb+srv://...` |
+| `JWT_SECRET` | Secret key for signing JWT tokens | `super_secret_jwt_key` |
+| `JWT_EXPIRE` | Token validity duration | `7d` |
+| `CLOUDINARY_CLOUD_NAME` | Cloudinary storage bucket name | `medify247` |
+| `CLOUDINARY_API_KEY` | Cloudinary API access key | `123456789` |
+| `CLOUDINARY_API_SECRET` | Cloudinary API access secret | `secret_key` |
+| `FRONTEND_URL` | Configured CORS allowed origin | `https://medify-247-psi.vercel.app` |
+
+### 13.3 Backup, Disaster Recovery & Monitoring
+- **Database Backups**: Automated MongoDB Atlas continuous cloud backups with point-in-time recovery (PITR) retention.
+- **Logging & Diagnostics**: Console structured logging with express error handlers; unhandled rejections write formatted diagnostic stack traces.
+- **Health Checks**: `/health` HTTP endpoint for automated uptime monitoring (Render / UptimeRobot).
+- **Testing & Verification**: Production build verification via `npx vite build` and continuous automated route testing.
+
+---
+
+## 14. Project Roadmap
+
+```mermaid
+timeline
+    title Medify247 Platform Roadmap
+    Phase 1 (Completed) : Unified Glassmorphic UI : Multi-Entity RBAC : Serial Booking Engine : PDF Prescriptions
+    Phase 2 (Current) : Institutional Approval System : Real-Time WebSockets : Dockerization : Dual Cloud Deployments
+    Phase 3 (Next) : Mobile App (React Native) : bKash/SSLCommerz Payment Integration : Telemedicine Video Calls (WebRTC)
+    Phase 4 (Future) : AI Prescription Assistant (ICD-10 suggestion) : Electronic Health Record (EHR) Interoperability
+```
+
+---
+
+> **Summary**: Medify247 is a comprehensive, production-ready healthcare SaaS platform engineering the digital transformation of patient care, doctor consultation, lab diagnostics, and institutional healthcare management.
