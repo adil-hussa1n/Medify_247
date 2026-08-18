@@ -354,6 +354,14 @@ const DoctorRegister = () => {
                 Sign in here
               </Link>
             </p>
+            <div style={{ marginTop: '16px', fontSize: '13px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              <span>Not a doctor? Register as </span>
+              <Link to="/hospital/register" className="link">Hospital</Link>
+              <span> or </span>
+              <Link to="/diagnostic-center/register" className="link">Diagnostic Center</Link>
+              <span> or </span>
+              <Link to="/register" className="link">Patient</Link>
+            </div>
           </div>
         </div>
       </div>

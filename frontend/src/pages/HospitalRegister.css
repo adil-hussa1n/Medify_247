@@ -129,7 +129,7 @@
 .input-wrapper input,
 .input-wrapper select {
   width: 100%;
-  padding: 14px 16px 14px 48px;
+  padding: 14px 16px;
   border: 2px solid #e2e8f0;
   border-radius: 12px;
   font-size: 16px;
