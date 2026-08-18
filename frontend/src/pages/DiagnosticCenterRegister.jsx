@@ -117,7 +117,7 @@ const DiagnosticCenterRegister = () => {
         setErrors(fieldErrors);
         setError(err.response.data.errors[0]?.msg || 'Validation failed. Please check your inputs.');
       } else {
-        setError(err.response?.data?.message || 'An unexpected error occurred. Please try again.');
+        setError(err.response?.data?.message || err.response?.data?.error || 'An unexpected error occurred. Please try again.');
       }
     } finally {
       setLoading(false);

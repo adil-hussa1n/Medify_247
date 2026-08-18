@@ -52,19 +52,19 @@ export const registerDiagnosticCenter = async (req, res) => {
       password
     } = req.body;
 
-    // Check if user or doctor already exists with this email or phone
+    // Check if user or doctor already exists with this email or phone or ownerPhone
     const existingUser = await User.findOne({
-      $or: [{ email }, { phone }]
+      $or: [{ email }, { phone }, { phone: ownerPhone }]
     });
 
     const existingDoctor = await Doctor.findOne({
-      $or: [{ email }, { phone }]
+      $or: [{ email }, { phone }, { phone: ownerPhone }]
     });
 
     if (existingUser || existingDoctor) {
       return res.status(400).json({
         success: false,
-        message: 'Account already exists with this email or phone'
+        message: 'Account already exists with this email or phone number'
       });
     }
 
@@ -73,7 +73,7 @@ export const registerDiagnosticCenter = async (req, res) => {
     if (existingCenter) {
       return res.status(400).json({
         success: false,
-        message: 'Trade license number already exists'
+        message: 'Trade license number already registered'
       });
     }
 
