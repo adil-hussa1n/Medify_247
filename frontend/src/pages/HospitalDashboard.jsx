@@ -1252,14 +1252,70 @@ const HomeServicesTab = ({ hospitalId, services, onRefresh, setSuccess, setError
         )}
       </div>
 
+      {/* View Home Service Details Modal */}
       {showDetailsModal && selectedService && (
-        <HomeServiceDetailsModal
-          serviceId={selectedService._id}
-          mode="hospital"
-          providerId={hospitalId}
-          initialService={selectedService}
-          onClose={() => { setShowDetailsModal(false); setSelectedService(null); }}
-        />
+        <div className="modal-overlay" onClick={() => { setShowDetailsModal(false); setSelectedService(null); }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+            <div className="modal-header">
+              <h2>Home Service Details</h2>
+              <button className="close-button" onClick={() => { setShowDetailsModal(false); setSelectedService(null); }}>
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="doctor-detail-grid">
+                <div className="detail-item">
+                  <label>Service Type:</label>
+                  <span style={{ fontWeight: 600, color: '#1e293b' }}>{selectedService.serviceType}</span>
+                </div>
+                <div className="detail-item">
+                  <label>Price:</label>
+                  <span style={{ fontWeight: 700, color: '#6366f1' }}>{selectedService.price} tk</span>
+                </div>
+                <div className="detail-item">
+                  <label>Operating Hours:</label>
+                  <span>{selectedService.availableTime?.startTime || '09:00'} – {selectedService.availableTime?.endTime || '17:00'}</span>
+                </div>
+                <div className="detail-item">
+                  <label>Status:</label>
+                  <span className={`status-badge ${selectedService.isActive ? 'active' : 'inactive'}`}>
+                    {selectedService.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                {selectedService.note && (
+                  <div className="detail-item full-width" style={{ gridColumn: '1 / -1' }}>
+                    <label>Notes / Details:</label>
+                    <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{selectedService.note}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '16px 24px', borderTop: '1px solid #e2e8f0' }}>
+              <button
+                type="button"
+                className="action-btn edit-btn"
+                style={{ padding: '8px 16px', borderRadius: '8px' }}
+                onClick={() => {
+                  const s = selectedService;
+                  setShowDetailsModal(false);
+                  handleEdit(s);
+                }}
+              >
+                Edit Service
+              </button>
+              <button
+                type="button"
+                className="close-btn"
+                style={{ padding: '8px 16px', borderRadius: '8px', background: '#e2e8f0', color: '#334155', border: 'none', cursor: 'pointer' }}
+                onClick={() => { setShowDetailsModal(false); setSelectedService(null); }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showSerialModal && selectedService && (
