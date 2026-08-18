@@ -2,17 +2,14 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Set environment
 ENV NODE_ENV=production
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
+COPY package-lock.json* ./
 
-# Install dependencies (production only for slim image size)
-RUN npm ci --only=production || npm install --production
-
-# Bust cache for source code changes
-ARG CACHEBUST=1
+# Install production dependencies
+RUN npm install --omit=dev --no-audit
 
 # Copy application files
 COPY . .
