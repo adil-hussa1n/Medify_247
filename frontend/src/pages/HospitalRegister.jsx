@@ -11,7 +11,8 @@ const HospitalRegister = () => {
     password: '',
     confirmPassword: '',
     address: '',
-    registrationNumber: ''
+    registrationNumber: '',
+    documents: ''
   });
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
@@ -43,6 +44,7 @@ const HospitalRegister = () => {
     if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
     if (!formData.address.trim()) newErrors.address = 'Address is required';
     if (!formData.registrationNumber.trim()) newErrors.registrationNumber = 'Registration number is required';
+    if (!formData.documents.trim()) newErrors.documents = 'Document URL is required';
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 8) {
@@ -188,6 +190,22 @@ const HospitalRegister = () => {
                 className={`auth-input-control ${errors.address ? 'has-error' : ''}`}
               />
               {errors.address && <span className="auth-field-error">{errors.address}</span>}
+            </div>
+          </div>
+
+          <div className="auth-form-grid single-col">
+            <div className="auth-field-group">
+              <label htmlFor="documents">Hospital Registration Document URL *</label>
+              <input
+                type="text"
+                id="documents"
+                name="documents"
+                value={formData.documents}
+                onChange={handleChange}
+                placeholder="https://example.com/hospital-license.pdf (or comma separated URLs)"
+                className={`auth-input-control ${errors.documents ? 'has-error' : ''}`}
+              />
+              {errors.documents && <span className="auth-field-error">{errors.documents}</span>}
             </div>
           </div>
 
