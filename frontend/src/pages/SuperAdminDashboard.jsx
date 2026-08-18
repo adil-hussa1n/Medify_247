@@ -620,6 +620,52 @@ const SuperAdminDashboard = () => {
     });
   };
 
+  const handleUpdateDoctor = async (doctorId) => {
+    try {
+      const response = await api.put(`/admin/doctors/${doctorId}`, doctorForm);
+      if (response.data.success) {
+        setSuccess('Doctor updated successfully.');
+        setEditingDoctor(null);
+        setDoctorForm({ name: '', email: '', phone: '', medicalLicenseNumber: '', specialization: '', experienceYears: 0, status: 'approved' });
+        fetchDoctors();
+        fetchDashboardStats();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update doctor.');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleDeleteDoctor = async (doctorId) => {
+    if (!window.confirm('Are you sure you want to delete this doctor? This action cannot be undone.')) return;
+    try {
+      const response = await api.delete(`/admin/doctors/${doctorId}`);
+      if (response.data.success) {
+        setSuccess('Doctor deleted successfully.');
+        fetchDoctors();
+        fetchDashboardStats();
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete doctor.');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const startEditDoctor = (doctor) => {
+    setEditingDoctor(doctor._id);
+    setDoctorForm({
+      name: doctor.name || '',
+      email: doctor.email || '',
+      phone: doctor.phone || '',
+      medicalLicenseNumber: doctor.medicalLicenseNumber || '',
+      specialization: Array.isArray(doctor.specialization) ? doctor.specialization.join(', ') : (doctor.specialization || ''),
+      experienceYears: doctor.experienceYears || 0,
+      status: doctor.status || 'approved'
+    });
+  };
+
   const handleUpdateUser = async (userId) => {
     try {
       const response = await api.put(`/admin/users/${userId}`, userForm);

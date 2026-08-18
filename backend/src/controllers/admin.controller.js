@@ -1087,7 +1087,11 @@ export const updateDoctor = async (req, res) => {
 
     Object.keys(updateData).forEach(key => {
       if (updateData[key] !== undefined) {
-        doctor[key] = updateData[key];
+        if (key === 'specialization' && typeof updateData[key] === 'string') {
+          doctor.specialization = updateData[key].split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+          doctor[key] = updateData[key];
+        }
       }
     });
 
