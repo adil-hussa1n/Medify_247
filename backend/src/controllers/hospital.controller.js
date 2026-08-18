@@ -1784,15 +1784,22 @@ export const getSerialStats = async (req, res) => {
     const { hospitalId, doctorId } = req.params;
     const { date } = req.query;
 
-    const serialSettings = await SerialSettings.findOne({
+    let serialSettings = await SerialSettings.findOne({
       doctorId,
       hospitalId
     });
 
     if (!serialSettings) {
-      return res.status(404).json({
-        success: false,
-        message: 'Serial settings not found'
+      // Auto-initialize default base serial settings so stats/management loads smoothly
+      const doctor = await Doctor.findById(doctorId);
+      serialSettings = await SerialSettings.create({
+        hospitalId,
+        doctorId,
+        totalSerialsPerDay: 20,
+        serialTimeRange: { startTime: '09:00', endTime: '17:00' },
+        appointmentPrice: doctor?.consultationFee || 500,
+        availableDays: [0, 1, 2, 3, 4, 5, 6],
+        isActive: true
       });
     }
 
@@ -1928,17 +1935,23 @@ export const createOrUpdateDateSerialSettings = async (req, res) => {
       });
     }
 
-    // Get base serial settings
-    const baseSerialSettings = await SerialSettings.findOne({
+    // Get base serial settings (auto-initialize if not set yet)
+    let baseSerialSettings = await SerialSettings.findOne({
       doctorId,
       hospitalId,
       isActive: true
     });
 
     if (!baseSerialSettings) {
-      return res.status(404).json({
-        success: false,
-        message: 'Base serial settings not found. Please configure serial settings first.'
+      const doctor = await Doctor.findById(doctorId);
+      baseSerialSettings = await SerialSettings.create({
+        hospitalId,
+        doctorId,
+        totalSerialsPerDay: 20,
+        serialTimeRange: { startTime: '09:00', endTime: '17:00' },
+        appointmentPrice: doctor?.consultationFee || 500,
+        availableDays: [0, 1, 2, 3, 4, 5, 6],
+        isActive: true
       });
     }
 
@@ -2025,17 +2038,23 @@ export const getDateSerialSettings = async (req, res) => {
     const { hospitalId, doctorId } = req.params;
     const { startDate, endDate, date } = req.query;
 
-    // Get base serial settings
-    const baseSerialSettings = await SerialSettings.findOne({
+    // Get base serial settings (auto-initialize if not set yet)
+    let baseSerialSettings = await SerialSettings.findOne({
       doctorId,
       hospitalId,
       isActive: true
     });
 
     if (!baseSerialSettings) {
-      return res.status(404).json({
-        success: false,
-        message: 'Base serial settings not found'
+      const doctor = await Doctor.findById(doctorId);
+      baseSerialSettings = await SerialSettings.create({
+        hospitalId,
+        doctorId,
+        totalSerialsPerDay: 20,
+        serialTimeRange: { startTime: '09:00', endTime: '17:00' },
+        appointmentPrice: doctor?.consultationFee || 500,
+        availableDays: [0, 1, 2, 3, 4, 5, 6],
+        isActive: true
       });
     }
 
