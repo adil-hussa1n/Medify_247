@@ -71,9 +71,10 @@ const HomeServiceDetailsModal = ({
 
   useEffect(() => {
     const load = async () => {
-      setLoading(true);
+      if (!initialService) {
+        setLoading(true);
+      }
       setError('');
-      setSerialSettings(null);
       try {
         let detailsUrl;
         if (mode === 'patient') {
@@ -85,11 +86,14 @@ const HomeServiceDetailsModal = ({
         }
 
         const response = await api.get(detailsUrl);
-        if (response.data.success) {
+        if (response.data.success && response.data.data.homeService) {
           setService(response.data.data.homeService);
         }
       } catch (err) {
-        setError(err.response?.data?.message || 'Failed to load service details');
+        // If initialService already exists, don't block display with error
+        if (!initialService) {
+          setError(err.response?.data?.message || 'Failed to load service details');
+        }
       }
 
       if (mode !== 'patient' && providerId) {
@@ -110,8 +114,10 @@ const HomeServiceDetailsModal = ({
       setLoading(false);
     };
 
-    load();
-  }, [serviceId, mode, providerId]);
+    if (serviceId) {
+      load();
+    }
+  }, [serviceId, mode, providerId, initialService]);
 
   const serialBooking = useMemo(
     () => resolveSerialBooking(service, serialSettings),
