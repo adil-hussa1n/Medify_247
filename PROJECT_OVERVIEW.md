@@ -1,23 +1,23 @@
 # Medify247 — Enterprise Architecture & Technical Specification
 
-> **Medify247** is a production-deployed, multi-tenant healthcare software-as-a-service (SaaS) platform tailored for South-Asian medical ecosystems. It unifies **Patients**, **Doctors**, **Hospitals**, **Diagnostic Centers**, and a **Super Admin** within a tenant-isolated system featuring 7-role RBAC, real-time WebSocket notifications, serial-based scheduling, and automated PDF medical workflows.
+> **Medify247** is a production-deployed, multi-tenant healthcare software-as-a-service (SaaS) platform tailored for South-Asian medical ecosystems. It unifies **Patients**, **Doctors**, **Hospitals**, **Diagnostic Centers**, and a **Super Admin** within a tenant-isolated architecture featuring 7-role RBAC, real-time WebSocket notifications, serial-based scheduling, and automated PDF medical workflows.
 
 ---
 
-## 📋 Feature Status & Implementation Matrix
+## 📋 Feature Implementation & Development Matrix
 
-| Capability / Feature | Status | Implementation Details |
+| Capability / Feature | Status | Implementation Mechanism / Details |
 |---|:---:|---|
-| **7-Role Granular RBAC** | ✅ Implemented | Pre-defined role templates (`owner`, `admin`, `support`, etc.) + custom overrides |
-| **Multi-Portal Architecture** | ✅ Implemented | Isolated login & registration flows per stakeholder |
-| **Serial Booking Engine** | ✅ Implemented | Sequential serial calculation with date-specific overrides |
+| **7-Role System Architecture** | ✅ Implemented | Roles across `User` collection (`patient`, `hospital_admin`, `diagnostic_center_admin`, `super_admin`, `super_admin_staff`) + separate `Doctor` collection (`doctor`, `doctor_staff`) |
+| **Multi-Tenant Isolation** | ✅ Implemented | Logical tenant scoping via `hospitalId`/`centerId` and middleware guards (`hospitalGuard`, `diagnosticCenterGuard`) |
+| **Serial Booking Engine** | ✅ Implemented | Sequential serial calculation with compound index race-condition guards |
 | **Digital Prescriptions** | ✅ Implemented | Structured clinical inputs (vitals, ICD-10 diagnosis, multi-dose medicines) |
 | **A4 PDF Document Export** | ✅ Implemented | PDFKit automated rendering for prescriptions & daily appointment serial lists |
 | **Socket.IO Real-Time Engine**| ✅ Implemented | Room-isolated event dispatching (`user-{id}`, `hospital-{id}`) |
-| **Cloudinary Media Vault** | ✅ Implemented | Multer local staging $\to$ Cloudinary CDN stream $\to$ local file cleanup |
-| **Institutional Approval System**| ✅ Implemented | `pending_super_admin` approval queue with audit logging |
+| **Cloudinary Media Storage** | ✅ Implemented | Multer local staging $\to$ Cloudinary CDN stream $\to$ local file cleanup |
+| **Institutional Approval System**| ✅ Implemented | `pending_super_admin` approval queue with `Approval` audit logging |
 | **Walk-in & Cash Payments** | ✅ Implemented | Cash/Offline payment handling & status tracking |
-| **bKash / Nagad Mobile Banking**| 🟡 Planned (Phase 3) | Data models & abstraction layers ready; gateway integration scheduled |
+| **bKash / Nagad Mobile Banking**| 🟡 Planned (Phase 3) | Data models & abstraction layers ready; gateway API integration scheduled |
 | **SSLCommerz Card Gateway** | 🟡 Planned (Phase 3) | Prepared in database schema (`paymentStatus`, `transactionId`) |
 | **Telemedicine Video Calls** | 🔵 Future (Phase 3) | WebRTC peer-to-peer video architecture planned |
 | **AI Prescription Assistant** | 🔵 Future (Phase 4) | ICD-10 auto-complete & drug interaction warnings |
@@ -27,30 +27,36 @@
 
 ## 1. Multi-Tenant Data Isolation & Authorization Architecture
 
-Medify247 is engineered as a **logical multi-tenant system** where each **Hospital** and **Diagnostic Center** acts as an isolated tenant node with boundary-scoped data access.
+Medify247 is engineered as a **logical multi-tenant system** where each **Hospital** and **Diagnostic Center** acts as an isolated institutional tenant node with boundary-scoped data access. **Independent Doctor practices** act as lightweight practice tenant nodes.
 
 ```
 Super Admin Platform Governance
- ├── Hospital Tenant A
- │    ├── Affiliated Doctors (Junction-linked)
+ ├── Hospital Tenant Node A
+ │    ├── Affiliated Doctors (Linked via Hospital.associatedDoctors[])
  │    ├── Staff Sub-Accounts (Scoped via HospitalStaff)
  │    ├── Test Catalog & Test Serials
  │    ├── Orders & Sample Requests
  │    └── Home Care Offerings
- └── Hospital Tenant B
-      ├── Affiliated Doctors
-      ├── Staff Sub-Accounts
-      ├── Test Catalog
-      └── Home Care Offerings
+ │
+ ├── Diagnostic Center Tenant Node B
+ │    ├── Affiliated Doctors (Linked via DiagnosticCenter.associatedDoctors[])
+ │    ├── Staff Sub-Accounts (Scoped via DiagnosticCenterStaff)
+ │    ├── Test Catalog & Test Serials
+ │    └── Home Care Offerings
+ │
+ └── Doctor Practice Node C
+      ├── Independent Chambers (Chamber model)
+      ├── Practice Staff (DoctorStaff)
+      └── Personal Appointments & Earnings
 ```
 
-### 1.1 Tenant Boundary Isolation & Security Rules
-- **Data Scoping**: Every resource (`Test`, `Order`, `HomeService`, `TestSerialBooking`, `HospitalStaff`) contains mandatory indexed foreign keys (`hospitalId` or `diagnosticCenterId`).
+### 1.1 Tenant Boundary Isolation & Authorization Middleware
+- **Mandatory Foreign Key Scoping**: Every institutional resource (`Test`, `Order`, `HomeService`, `TestSerialBooking`, `HospitalStaff`) contains indexed foreign keys (`hospitalId` or `diagnosticCenterId`).
 - **Middleware Boundary Guards (`hospitalGuard` & `diagnosticCenterGuard`)**: 
-  1. Requests pass through `authenticate` (verifies JWT identity).
-  2. Router invokes `hospitalGuard(requiredPermission)` which extracts `hospitalId` from URL parameters.
-  3. Guard verifies if the authenticated user is either the primary tenant owner OR an active `HospitalStaff` / `DiagnosticCenterStaff` member belonging strictly to `req.params.hospitalId` with the required permission grant.
-  4. Cross-tenant requests (e.g. Staff from Hospital A requesting `/api/hospitals/HOSPITAL_B/doctors`) are rejected with `403 Forbidden`.
+  1. Request passes through `authenticate` (validates HMAC JWT token).
+  2. Router invokes `hospitalGuard(requiredPermission)` which extracts `hospitalId` from `req.params`.
+  3. Guard verifies if the authenticated user is either the primary tenant owner OR an active staff member (`HospitalStaff` / `DiagnosticCenterStaff`) belonging strictly to `req.params.hospitalId` with the required permission grant.
+  4. Cross-tenant requests (e.g., Staff from Hospital A requesting `/api/hospitals/HOSPITAL_B/doctors`) are rejected with `403 Forbidden`.
 
 ---
 
@@ -82,8 +88,8 @@ erDiagram
     USER ||--o| HOSPITALSTAFF : "1-to-1 staff assignment"
     USER ||--o| DIAGNOSTICCENTERSTAFF : "1-to-1 staff assignment"
 
-    DOCTOR }|--|{ HOSPITAL : "Affiliation / Linking"
-    DOCTOR }|--|{ DIAGNOSTICCENTER : "Affiliation / Linking"
+    DOCTOR }|--|{ HOSPITAL : "Linked via Hospital.associatedDoctors[]"
+    DOCTOR }|--|{ DIAGNOSTICCENTER : "Linked via DiagnosticCenter.associatedDoctors[]"
     DOCTOR ||--o{ APPOINTMENT : conducts
     DOCTOR ||--o{ PRESCRIPTION : issues
     DOCTOR ||--o{ CHAMBER : operates
@@ -108,49 +114,56 @@ erDiagram
 
 ---
 
-## 4. Complete Database Schema Definitions (28 Schemas)
+## 4. Complete Database Schema Definitions & Collections (28 Schemas)
 
-### 4.1 Primary Identity & Auth Schemas
-1. **`User`**: Core user entity (`name`, `email` [unique], `phone` [unique], `password`, `role` [`patient`, `hospital_admin`, `diagnostic_center_admin`, `super_admin`, `super_admin_staff`], `dateOfBirth`, `gender`, `address`, `isActive`, `isVerified`).
-2. **`Doctor`**: Specialized physician entity (`name`, `email` [unique], `phone` [unique], `password`, `medicalLicenseNumber` [unique], `specialization` [Array], `qualifications`, `experienceYears`, `consultationFee`, `bio`, `profilePhotoUrl`, `status` [`pending_super_admin`, `approved`, `rejected`, `suspended`]).
-3. **`Hospital`**: Institutional provider (`userId`, `name`, `registrationNumber` [unique], `address`, `phone`, `email`, `documents` [Array], `status` [`pending_super_admin`, `approved`, `rejected`, `suspended`], `admins` [Array]).
-4. **`DiagnosticCenter`**: Diagnostic laboratory (`userId`, `name`, `tradeLicenseNumber` [unique], `ownerName`, `ownerPhone`, `address`, `status` [`pending_super_admin`, `approved`, `rejected`, `suspended`]).
+### 4.1 Primary Identity & 7-Role Representation
+Medify247 implements a **7-Role System Architecture** using a dual-collection design:
+- **`User` Collection Roles**: `patient`, `hospital_admin`, `diagnostic_center_admin`, `super_admin`, `super_admin_staff`.
+- **`Doctor` Collection Roles**: `doctor` (physician entity with medical license) and `doctor_staff` (staff sub-account under doctor practice).
 
-### 4.2 Clinical & Scheduling Schemas
-5. **`Appointment`**: Consultation record (`patientId`, `doctorId`, `chamberId`, `appointmentDate`, `appointmentNumber` [unique], `status` [`pending`, `accepted`, `rejected`, `completed`, `cancelled`, `no_show`], `fee`, `paymentStatus` [`pending`, `paid`, `refunded`], `paymentMethod` [`cash`, `card`, `online`], `serialNumber`).
-6. **`Prescription`**: Medical record (`appointmentId`, `patientId`, `doctorId`, `vitals` [`bp`, `pulse`, `temperature`, `weight`, `height`, `bmi`, `spo2`], `diagnosis` [ICD-10 array], `medicines` [`name`, `dosage`, `frequency`, `duration`, `instructions`], `recommendedTests`, `advice`, `followUpDate`, `pdfUrl`).
-7. **`Chamber`**: Practice location (`doctorId`, `hospitalId`, `diagnosticCenterId`, `name`, `address`, `consultationFee`, `phone`, `isActive`).
-8. **`SerialSettings`**: Daily appointment capacity rules (`doctorId`, `locationType`, `hospitalId`, `diagnosticCenterId`, `totalSerialsPerDay`, `serialTimeRange` [`startTime`, `endTime`], `availableDays` [Array], `appointmentPrice`).
-9. **`DateSerialSettings`**: Date-specific serial overrides (`doctorId`, `date`, `totalSerialsPerDay`, `isEnabled`, `adminNote`).
-10. **`Schedule`**: Recurring doctor timetable (`doctorId`, `dayOfWeek`, `startTime`, `endTime`, `maxPatients`).
-11. **`HospitalSchedule`**: Institution-controlled doctor schedule (`hospitalId`, `doctorId`, `dayOfWeek`, `startTime`, `endTime`).
+> **Architectural Note**: Doctors and Doctor Practice Staff are stored in the dedicated `Doctor` and `DoctorStaff` collections to accommodate specialized medical licensing, chamber associations, and independent login credentials without polluting the primary `User` collection.
 
-### 4.3 Diagnostic & Home Healthcare Schemas
-12. **`Test`**: Individual test or test package (`name`, `code`, `category` [`pathology`, `radiology`, `cardiology`, `other`], `price`, `duration`, `hospitalId`, `diagnosticCenterId`, `isPackage`, `includedTests` [Array]).
-13. **`Order`**: Lab test invoice (`orderNumber` [unique], `patientId`, `hospitalId`, `diagnosticCenterId`, `tests` [Array], `totalAmount`, `discount`, `finalAmount`, `collectionType` [`walk_in`, `home_collection`], `paymentStatus` [`unpaid`, `paid`, `refunded`], `orderStatus` [`pending`, `confirmed`, `sample_collected`, `processing`, `completed`, `cancelled`], `reportUrls` [Array]).
-14. **`TestSerialSettings`**: Lab test serial capacity rules (`testId`, `totalSerialsPerDay`, `serialTimeRange`, `availableDays`).
-15. **`TestSerialBooking`**: Patient serial reservation for diagnostic tests (`testId`, `patientId`, `date`, `serialNumber`, `status`).
-16. **`HomeService`**: At-home care definition (`serviceType`, `price`, `availableTime`, `offDays`, `hospitalId`, `diagnosticCenterId`, `isActive`).
-17. **`HomeServiceRequest`**: Home care dispatch ticket (`requestNumber` [unique], `patientId`, `homeServiceId`, `patientName`, `patientAge`, `patientGender`, `homeAddress`, `contactPhone`, `preferredDate`, `preferredTime`, `status` [`pending`, `accepted`, `rejected`, `completed`, `cancelled`], `assignedStaff`).
-18. **`HomeServiceSerialSettings`**: Home care serial capacity rules (`serviceId`, `totalSerialsPerDay`, `serialTimeRange`).
-19. **`HomeServiceSerialBooking`**: Serial reservations for home care services.
+### 4.2 Doctor-to-Institution Affiliation Mechanisms
+Doctor affiliations across multiple hospitals and diagnostic centers are implemented as **embedded junction sub-documents**:
+- **`Hospital.associatedDoctors`**: Array of `{ doctor: ObjectId(Doctor), designation: String, department: String, joinedAt: Date }`.
+- **`DiagnosticCenter.associatedDoctors`**: Array of `{ doctor: ObjectId(Doctor), designation: String, department: String, joinedAt: Date }`.
+- **`Chamber`**: Allows doctors to operate individual consultation chambers attached to either a Hospital, a Diagnostic Center, or a Private Clinic (`locationType`: `hospital` | `diagnostic_center` | `private_chamber`).
 
-### 4.4 Financial, System & RBAC Schemas
-20. **`Earning`**: Ledger entry (`doctorId`, `appointmentId`, `month`, `year`, `consultationFee`, `platformFee`, `netAmount`, `status` [`pending`, `paid`, `cancelled`], `paymentMethod`, `transactionId`).
-21. **`Specialization`**: Master specialty directory (`name`, `description`, `iconUrl`).
-22. **`Notification`**: Real-time event log (`userId`, `title`, `message`, `type`, `isRead`, `link`).
-23. **`Approval`**: Institutional audit log (`actorId`, `actorRole`, `targetType`, `targetId`, `action` [`register`, `approve`, `reject`, `suspend`, `reactivate`], `reason`, `previousStatus`, `newStatus`).
-24. **`Banner`**: Marketing banner (`title`, `imageUrl`, `targetUrl`, `startDate`, `endDate`, `isActive`, `displayOrder`).
-25. **`HospitalStaff`**: Sub-account (`hospitalId`, `userId`, `role`, `permissions` [Array], `isActive`).
-26. **`DiagnosticCenterStaff`**: Sub-account (`diagnosticCenterId`, `userId`, `role`, `permissions` [Array], `isActive`).
-27. **`DoctorStaff`**: Sub-account (`doctorId`, `userId`, `role`, `permissions` [Array], `isActive`).
-28. **`SuperAdminStaff`**: Platform sub-account (`userId`, `role`, `permissions` [Array], `isActive`).
+### 4.3 Schema Inventory List (28 Schemas)
+1. **`User`**: Patient, Hospital Admin, Diagnostic Admin, Super Admin, Admin/Staff accounts.
+2. **`Doctor`**: Physicians (separate collection with medical license, specialization, qualifications).
+3. **`Hospital`**: Institutional profile, registration number, address, `associatedDoctors` junction array.
+4. **`DiagnosticCenter`**: Diagnostic center profile, trade license number, `associatedDoctors` junction array.
+5. **`Appointment`**: Consultation record (`patientId`, `doctorId`, `chamberId`, `appointmentDate`, `appointmentNumber`, `status` [`pending`, `accepted`, `rejected`, `completed`, `cancelled`, `no_show`], `paymentStatus` [`pending`, `paid`, `refunded`], `serialNumber`).
+6. **`Prescription`**: Digital clinical prescription with vitals, ICD-10 diagnosis, multi-dose medicines, and Cloudinary PDF link.
+7. **`Chamber`**: Consultation location operated by doctor.
+8. **`SerialSettings`**: Daily appointment serial capacity rules per location/institution.
+9. **`DateSerialSettings`**: Date-specific serial overrides and holiday blocks.
+10. **`Schedule`**: Doctor weekly recurring timetable.
+11. **`HospitalSchedule`**: Hospital-managed doctor schedule.
+12. **`Test`**: Diagnostic test or test package (`isPackage`, `includedTests`).
+13. **`Order`**: Lab test invoice (`collectionType`: `walk_in` | `home_collection`, `paymentStatus`, `orderStatus`, `reportUrls`).
+14. **`TestSerialSettings`**: Serial rules for lab test bookings.
+15. **`TestSerialBooking`**: Patient serial reservations for diagnostic tests.
+16. **`HomeService`**: At-home care definition (nursing, sample collection).
+17. **`HomeServiceRequest`**: Home care dispatch ticket (`requestNumber`, `status`, `assignedStaff`).
+18. **`HomeServiceSerialSettings`**: Serial capacity rules for home services.
+19. **`HomeServiceSerialBooking`**: Serial reservations for home healthcare services.
+20. **`Earning`**: Per-appointment earnings ledger (`consultationFee`, `platformFee`, `netAmount`, `status` [`pending`, `paid`]).
+21. **`Specialization`**: Medical specialty directory.
+22. **`Notification`**: Real-time event log.
+23. **`Approval`**: Institutional audit trail (`actorId`, `targetType`, `action`, `reason`, `previousStatus`, `newStatus`).
+24. **`Banner`**: Promotional banners managed by Super Admin.
+25. **`HospitalStaff`**: Staff sub-account (1-to-1 user binding per hospital).
+26. **`DiagnosticCenterStaff`**: Staff sub-account (1-to-1 user binding per diagnostic center).
+27. **`DoctorStaff`**: Staff sub-account for doctor practice.
+28. **`SuperAdminStaff`**: Platform admin staff sub-account.
 
 ---
 
-## 5. End-to-End Business Lifecycles & State Transitions
+## 5. End-to-End Business Lifecycles & Branching Logic
 
-### 5.1 Complete Booking & Payment Lifecycle (With Edge Cases)
+### 5.1 Booking Lifecycle & Payment Branching
 ```
 [ Patient Selects Doctor & Date ]
               │
@@ -158,12 +171,12 @@ erDiagram
 [ Compute Available Serials (1..N) ]
               │
               ▼
-[ Patient Submits Booking ] ────► ( Payment Failure / Cancellation ) ──► [ Status: cancelled ]
-              │                                                             [ PaymentStatus: refunded ]
+[ Patient Submits Booking ] ────► ( User Cancels / Payment Fail ) ──► [ Status: cancelled ]
+              │                                                        [ PaymentStatus: refunded / cancelled ]
               ▼
 [ Appointment Created (status: pending, paymentStatus: pending/paid) ]
               │
-              ├──► ( Doctor Rejects ) ──► [ Status: rejected ] ──► [ Trigger Refund Workflow ]
+              ├──► ( Doctor Rejects ) ──► [ Status: rejected ] ──► [ Trigger Refund / Release Serial ]
               │
               ▼
 [ Doctor Accepts (status: accepted) ]
@@ -189,7 +202,7 @@ $$\text{Net Earning} = \text{Consultation Fee} - \text{Platform Fee}$$
 
 ---
 
-## 7. API Reference Specification
+## 7. API Endpoint Reference
 
 ### 7.1 Key Endpoints Summary Matrix
 
@@ -222,11 +235,13 @@ All API endpoints return standard JSON error structures:
 
 ---
 
-## 8. Serial Calculation & Concurrency Handling
+## 8. Serial Calculation & Race-Condition Guarding
 
-- **Serial Number Allocation**: Calculated dynamically by inspecting existing non-cancelled bookings for the specified doctor/chamber/date combination:
-  $$\text{Next Serial} = \text{Count}(\text{Existing Active Bookings}) + 1$$
-- **Concurrency Strategy**: Enforced via atomic database pre-checks and Mongoose compound unique indexes (`{ doctorId: 1, chamberId: 1, appointmentDate: 1, serialNumber: 1 }`). Duplicate index collisions trigger a clean 400 error requiring the user to refresh serial options.
+- **Serial Calculation Algorithm**:
+  $$\text{Candidate Serial} = \text{Count}(\text{Existing Active Appointments for Date}) + 1$$
+- **Concurrency & Collision Guarding**:
+  - The database layer enforces a compound unique index on `{ doctorId: 1, chamberId: 1, appointmentDate: 1, serialNumber: 1 }`.
+  - **Collision Behavior**: If two concurrent booking requests compute the same candidate serial number, MongoDB index enforcement accepts the first write and rejects the second request with a duplicate index error. The backend returns a `400 Bad Request` informing the user that the serial was just claimed, prompting the client to refresh available serials.
 
 ---
 
@@ -252,7 +267,7 @@ All API endpoints return standard JSON error structures:
 ## 10. Quality Assurance & Testing Strategy
 
 - **Build Verification**: Production frontend compilations are validated via `npx vite build` (verifying AST transformations and CSS minification across 144 modules).
-- **Implementation Status**:
+- **Testing Status Overview**:
   - **Unit Tests**: Planned (Phase 3)
   - **Integration & Route Tests**: Planned (Phase 3)
   - **End-to-End (E2E) Tests**: Planned (Phase 3)
@@ -260,7 +275,14 @@ All API endpoints return standard JSON error structures:
 
 ---
 
-## 11. Production Architecture Diagram
+## 11. Data Retention & Medical Privacy Policy Architecture
+
+- **Prescription & Medical Record Protection**: Prescription URLs stored on Cloudinary are generated with non-guessable cryptographic hashes. Digital prescriptions in MongoDB require verified JWT ownership checks (`patientId` == `req.user._id` OR `doctorId` == `req.user._id`).
+- **Data Retention Rules**: Patient medical histories and diagnostic test reports are retained permanently in cold storage unless user account deletion is requested.
+
+---
+
+## 12. Production Architecture Diagram
 
 ```
                  [ Vercel CDN (Frontend SPA) ]
@@ -280,7 +302,7 @@ All API endpoints return standard JSON error structures:
 
 ---
 
-## 12. Project Roadmap
+## 13. Project Roadmap
 
 ```mermaid
 timeline
@@ -293,4 +315,4 @@ timeline
 
 ---
 
-> **Summary**: Medify247 is a feature-complete, multi-tenant healthcare SaaS platform digitizing patient scheduling, clinical prescriptions, diagnostic lab operations, and platform governance.
+> **Summary**: Medify247 is a core-feature-complete healthcare SaaS platform digitizing patient scheduling, clinical prescriptions, diagnostic lab operations, and platform governance.
