@@ -76,15 +76,19 @@ export const registerHospital = async (req, res) => {
       documents
     } = req.body;
 
-    // Check if user already exists
+    // Check if user or doctor already exists with this email or phone
     const existingUser = await User.findOne({
       $or: [{ email }, { phone }]
     });
 
-    if (existingUser) {
+    const existingDoctor = await Doctor.findOne({
+      $or: [{ email }, { phone }]
+    });
+
+    if (existingUser || existingDoctor) {
       return res.status(400).json({
         success: false,
-        message: 'User already exists with this email or phone'
+        message: 'Account already exists with this email or phone'
       });
     }
 
