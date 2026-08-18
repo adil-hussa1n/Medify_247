@@ -1233,15 +1233,26 @@ export const createDiagnosticCenter = async (req, res) => {
     } = req.body;
 
     // Check if user already exists
-    const existingUser = await User.findOne({
+    let existingUser = await User.findOne({
       $or: [{ email }, { phone }]
     });
 
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'User already exists with this email or phone'
-      });
+      // If orphaned diagnostic user with no attached active center, clean up or re-use
+      if (existingUser.role === 'diagnostic_center_admin') {
+        const hasCenter = await DiagnosticCenter.findOne({ userId: existingUser._id });
+        if (!hasCenter) {
+          await User.findByIdAndDelete(existingUser._id);
+          existingUser = null;
+        }
+      }
+      
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'User already exists with this email or phone'
+        });
+      }
     }
 
     // Check if trade license number already exists
