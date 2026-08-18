@@ -11,7 +11,7 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - BACKEND_URL=https://medify.daruntech.cloud
-      - MONGO_URI=mongodb://medify247:Medify%402026@213.210.36.172:3308/?authSource=admin&directConnection=true
+      - MONGO_URI=mongodb://medify247:Medify%402026@213.210.36.172:3398/?authSource=admin&directConnection=true
       - JWT_SECRET=your_super_secret_jwt_key_change_in_production
       - JWT_EXPIRE=7d
       - FRONTEND_URL=http://localhost:5173,http://localhost:3000,https://medify.daruntech.cloud
