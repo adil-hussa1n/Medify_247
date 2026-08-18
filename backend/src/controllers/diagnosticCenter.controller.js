@@ -110,24 +110,26 @@ export const registerDiagnosticCenter = async (req, res) => {
       isActive: true
     });
 
-    // Log registration event
-    await logApproval(
-      user._id,
-      'diagnostic_center_admin',
-      'diagnostic_center',
-      diagnosticCenter._id,
-      'register',
-      null,
-      null,
-      'pending_super_admin'
-    );
-
-    // Send notification (stub)
-    await notifyEmail(
-      email,
-      'Diagnostic Center Registration Submitted',
-      'Your diagnostic center registration has been submitted and is pending super admin approval.'
-    );
+    // Log registration event & send notification safely
+    try {
+      await logApproval(
+        user._id,
+        'diagnostic_center_admin',
+        'diagnostic_center',
+        diagnosticCenter._id,
+        'register',
+        null,
+        null,
+        'pending_super_admin'
+      );
+      await notifyEmail(
+        email,
+        'Diagnostic Center Registration Submitted',
+        'Your diagnostic center registration has been submitted and is pending super admin approval.'
+      );
+    } catch (logErr) {
+      console.warn('Non-blocking logApproval/notifyEmail error in registerDiagnosticCenter:', logErr);
+    }
 
     res.status(201).json({
       success: true,

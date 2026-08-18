@@ -130,24 +130,26 @@ export const registerHospital = async (req, res) => {
       isActive: true
     });
 
-    // Log registration event
-    await logApproval(
-      user._id,
-      'hospital_admin',
-      'hospital',
-      hospital._id,
-      'register',
-      null,
-      null,
-      'pending_super_admin'
-    );
-
-    // Send notification (stub)
-    await notifyEmail(
-      email,
-      'Hospital Registration Submitted',
-      'Your hospital registration has been submitted and is pending super admin approval.'
-    );
+    // Log registration event & send notification safely
+    try {
+      await logApproval(
+        user._id,
+        'hospital_admin',
+        'hospital',
+        hospital._id,
+        'register',
+        null,
+        null,
+        'pending_super_admin'
+      );
+      await notifyEmail(
+        email,
+        'Hospital Registration Submitted',
+        'Your hospital registration has been submitted and is pending super admin approval.'
+      );
+    } catch (logErr) {
+      console.warn('Non-blocking logApproval error in registerHospital:', logErr);
+    }
 
     res.status(201).json({
       success: true,
