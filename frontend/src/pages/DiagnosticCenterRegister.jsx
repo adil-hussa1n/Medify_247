@@ -107,7 +107,18 @@ const DiagnosticCenterRegister = () => {
         setError(response.data.message || 'Registration failed. Please try again.');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'An unexpected error occurred. Please try again.');
+      if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        const fieldErrors = {};
+        err.response.data.errors.forEach((e) => {
+          if (e.param || e.path) {
+            fieldErrors[e.param || e.path] = e.msg;
+          }
+        });
+        setErrors(fieldErrors);
+        setError(err.response.data.errors[0]?.msg || 'Validation failed. Please check your inputs.');
+      } else {
+        setError(err.response?.data?.message || 'An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
