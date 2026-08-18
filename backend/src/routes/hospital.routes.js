@@ -69,7 +69,7 @@ router.post('/register', [
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   body('address').notEmpty().withMessage('Address is required'),
   body('registrationNumber').notEmpty().withMessage('Registration number is required'),
-  body('documents').notEmpty().withMessage('Documents are required')
+  body('documents').optional()
 ], registerHospital);
 
 // Hospital admin routes (require authentication and hospital admin role)
