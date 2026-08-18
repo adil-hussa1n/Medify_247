@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../config/api';
 import './HomeServiceDetailsModal.css';
 
@@ -131,7 +132,7 @@ const HomeServiceDetailsModal = ({
     onClose();
   };
 
-  return (
+  return createPortal(
     <div className="hs-details-overlay" onClick={onClose}>
       <div className="hs-details-modal" onClick={(e) => e.stopPropagation()}>
         <div className="hs-details-header">
@@ -340,7 +341,8 @@ const HomeServiceDetailsModal = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
