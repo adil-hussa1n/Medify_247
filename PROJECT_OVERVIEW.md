@@ -277,8 +277,8 @@ All API endpoints return standard JSON error structures:
 
 ## 11. Data Retention & Medical Privacy Policy Architecture
 
-- **Prescription & Medical Record Protection**: Access to digital prescriptions and diagnostic reports is enforced via application-level authorization middleware (`authenticate`). JWT identity checks verify that the requesting user is either the assigned patient (`patientId === req.user._id`), the issuing doctor (`doctorId === req.user._id`), or an authorized institutional staff member. PDF documents stored on Cloudinary utilize non-guessable resource identifiers and private access controls to prevent unauthorized access.
-- **Data Retention Rules**: Patient medical histories and diagnostic test reports are retained permanently in cold storage unless user account deletion is requested.
+- **Prescription & Medical Record Protection**: Medical records are protected through application-level authorization. Cloudinary resources use non-guessable identifiers and configured access controls; application authorization (`authenticate` middleware & JWT identity verification) remains the primary access-control layer.
+- **Data Retention**: Medical records are retained according to the platform's configured retention policy. Account deletion and medical-record deletion/anonymization procedures require explicit policy implementation before being considered finalized.
 
 ---
 
@@ -289,7 +289,9 @@ All API endpoints return standard JSON error structures:
                               │
                     HTTPS REST & WebSockets
                               ▼
-            [ Hostinger VPS / Render Docker Container ]
+        [ Hostinger VPS / Render Docker Container ]*
+        *(Dockerized backend deployment supported on either target;
+          only one active backend host per environment)
            ┌──────────────────────────────────────────┐
            │ Express API Engine + Socket.IO Server    │
            └────────────────────┬─────────────────────┘
