@@ -50,7 +50,7 @@ const HomeServiceDetailsModal = ({
 }) => {
   const [service, setService] = useState(initialService);
   const [serialSettings, setSerialSettings] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialService);
   const [error, setError] = useState('');
 
   const today = useMemo(() => new Date(), []);
