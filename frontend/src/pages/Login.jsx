@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../config/api';
-import './Login.css';
+import './AuthShared.css';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -11,39 +10,8 @@ const Login = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [backendStatus, setBackendStatus] = useState('checking'); // 'checking', 'online', 'offline'
   const { login } = useAuth();
   const navigate = useNavigate();
-
-  // Check backend connection on component mount
-  useEffect(() => {
-    const checkBackend = async () => {
-      try {
-        // Use fetch directly to avoid API base URL prefix
-        const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-        const healthURL = baseURL.replace('/api', '') + '/health';
-        
-        const response = await fetch(healthURL, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Backend is online:', data);
-          setBackendStatus('online');
-        } else {
-          console.warn('Backend health check returned non-OK status:', response.status);
-          setBackendStatus('offline');
-        }
-      } catch (error) {
-        console.error('Backend health check failed:', error);
-        setBackendStatus('offline');
-      }
-    };
-    checkBackend();
-  }, []);
 
   const handleChange = (e) => {
     setFormData({
@@ -58,14 +26,8 @@ const Login = () => {
     setError('');
     setLoading(true);
 
-    console.log('=== LOGIN ATTEMPT STARTED ===');
-    console.log('Email:', formData.email);
-    console.log('Password length:', formData.password.length);
-
     try {
-      console.log('Calling login function...');
       const result = await login(formData.email, formData.password);
-      console.log('Login result received:', result);
       
       if (result.success) {
         const role = result.data?.user?.role;
@@ -83,11 +45,7 @@ const Login = () => {
           navigate('/');
         }
       } else {
-        console.error('Login failed:', result.message);
         setError(result.message || 'Login failed. Please try again.');
-        if (result.errors) {
-          console.error('Login errors:', result.errors);
-        }
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
@@ -131,9 +89,9 @@ const Login = () => {
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="name@example.com"
-                className={`auth-input-control ${errors.email ? 'has-error' : ''}`}
+                className="auth-input-control"
+                required
               />
-              {errors.email && <span className="auth-field-error">{errors.email}</span>}
             </div>
 
             <div className="auth-field-group">
@@ -145,9 +103,9 @@ const Login = () => {
                 value={formData.password}
                 onChange={handleChange}
                 placeholder="Enter your password"
-                className={`auth-input-control ${errors.password ? 'has-error' : ''}`}
+                className="auth-input-control"
+                required
               />
-              {errors.password && <span className="auth-field-error">{errors.password}</span>}
             </div>
           </div>
 
