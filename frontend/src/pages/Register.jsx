@@ -283,6 +283,38 @@ const Register = () => {
               </Link>
             </p>
           </div>
+
+          <div className="partner-registration-section">
+            <div className="partner-divider">
+              <span>Are you a Healthcare Partner?</span>
+            </div>
+            <p className="partner-subtext">Register your practice, hospital, or center below</p>
+            <div className="partner-cards-grid">
+              <Link to="/doctor/register" className="partner-card">
+                <div className="partner-icon doctor-bg">🩺</div>
+                <div className="partner-info">
+                  <h4>Doctor Registration</h4>
+                  <p>Join as a physician</p>
+                </div>
+              </Link>
+
+              <Link to="/hospital/register" className="partner-card">
+                <div className="partner-icon hospital-bg">🏥</div>
+                <div className="partner-info">
+                  <h4>Hospital Registration</h4>
+                  <p>Register your hospital</p>
+                </div>
+              </Link>
+
+              <Link to="/diagnostic-center/register" className="partner-card">
+                <div className="partner-icon diagnostic-bg">🔬</div>
+                <div className="partner-info">
+                  <h4>Diagnostic Center</h4>
+                  <p>Register your center</p>
+                </div>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>
