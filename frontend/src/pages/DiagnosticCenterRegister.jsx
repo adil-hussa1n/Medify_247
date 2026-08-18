@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import api from '../config/api';
 import { useAuth } from '../context/AuthContext';
-import './DiagnosticCenterRegister.css';
+import './AuthShared.css';
 
 const DiagnosticCenterRegister = () => {
   const [formData, setFormData] = useState({
