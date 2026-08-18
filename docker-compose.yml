@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medify247-backend
+    restart: unless-stopped
+    ports:
+      - "3308:3308"
+    environment:
+      - PORT=3308
+      - NODE_ENV=production
+      - BACKEND_URL=https://medify.daruntech.cloud
+      - MONGO_URI=mongodb://medify247:Medify%402026@213.210.36.172:3308/?authSource=admin&directConnection=true
+      - JWT_SECRET=your_super_secret_jwt_key_change_in_production
+      - JWT_EXPIRE=7d
+      - FRONTEND_URL=http://localhost:5173,http://localhost:3000,https://medify.daruntech.cloud
+      - MAX_FILE_SIZE=5242880
+      - CLOUDINARY_CLOUD_NAME=your_cloud_name
+      - CLOUDINARY_API_KEY=165659424529151
+      - CLOUDINARY_API_SECRET=CF3tNTVHfsOqReb-lFjYX6XUQqo
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_exports:/app/exports
+
+volumes:
+  backend_uploads:
+  backend_exports:
