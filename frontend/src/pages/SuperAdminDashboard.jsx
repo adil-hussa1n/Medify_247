@@ -275,9 +275,8 @@ const SuperAdminDashboard = () => {
       const params = {
         page: usersPagination.page,
         limit: usersPagination.limit,
-        role: 'patient', // Always fetch only patients
         ...usersFilters,
-        role: 'patient' // Override any role in usersFilters to ensure it's always patient
+        role: 'patient' // Ensure role is always patient
       };
       // If isActive is empty string (All Status), remove it from params to show all
       if (params.isActive === '') {
